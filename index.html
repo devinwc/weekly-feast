@@ -1,0 +1,1503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weekly Feast</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-512.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Weekly Feast">
+<meta name="theme-color" content="#1C1917">
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --cream:#F7F3EE; --paper:#FFFDF9; --ink:#1C1917; --ink-soft:#57534E;
+    --rule:#E7E2DB; --amber:#D97706; --amber-lt:#FEF3C7;
+    --green:#15803D; --green-lt:#DCFCE7;
+    --red:#B91C1C;   --red-lt:#FEE2E2;
+    --blue:#1D4ED8;  --blue-lt:#DBEAFE;
+    --purple:#7C3AED; --purple-lt:#EDE9FE;
+    --orange:#C2410C; --orange-lt:#FFEDD5;
+    --shadow:0 1px 3px rgba(28,25,23,.08),0 4px 16px rgba(28,25,23,.06);
+    --radius:10px; --serif:'Playfair Display',Georgia,serif;
+    --sans:'DM Sans',system-ui,sans-serif; --t:180ms ease;
+  }
+  body { font-family:var(--sans); background:var(--cream); color:var(--ink); min-height:100vh; font-size:14px; line-height:1.5; }
+  .app { max-width:1100px; margin:0 auto; padding:0 20px 80px; }
+
+  header { display:flex; align-items:baseline; justify-content:space-between; padding:36px 0 28px; border-bottom:1.5px solid var(--ink); margin-bottom:32px; gap:16px; flex-wrap:wrap; }
+  .brand { display:flex; align-items:baseline; gap:14px; }
+  .brand h1 { font-family:var(--serif); font-size:clamp(26px,4vw,38px); font-weight:700; letter-spacing:-.5px; }
+  .brand .week-label { font-size:12px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-soft); }
+  .header-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:9px 18px; border-radius:var(--radius); border:1.5px solid transparent; font-family:var(--sans); font-size:13px; font-weight:500; cursor:pointer; transition:all var(--t); white-space:nowrap; }
+  .btn-primary { background:var(--ink); color:var(--cream); border-color:var(--ink); }
+  .btn-primary:hover { background:#3C3833; }
+  .btn-outline { background:transparent; color:var(--ink); border-color:var(--rule); }
+  .btn-outline:hover { border-color:var(--ink-soft); background:var(--paper); }
+  .btn-ghost { background:transparent; color:var(--ink-soft); border-color:transparent; padding:6px 10px; font-size:12px; }
+  .btn-ghost:hover { color:var(--ink); background:var(--rule); }
+  .btn[disabled] { opacity:.45; pointer-events:none; }
+
+  .tabs { display:flex; gap:2px; margin-bottom:28px; background:var(--rule); padding:3px; border-radius:12px; width:fit-content; }
+  .tab { padding:7px 20px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; border:none; background:transparent; color:var(--ink-soft); font-family:var(--sans); transition:all var(--t); }
+  .tab.active { background:var(--paper); color:var(--ink); box-shadow:0 1px 4px rgba(28,25,23,.1); }
+  .panel { display:none; }
+  .panel.active { display:block; }
+
+  /* Settings bar */
+  .settings-bar { display:flex; gap:12px; align-items:center; margin-bottom:24px; padding:14px 18px; background:var(--paper); border:1px solid var(--rule); border-radius:var(--radius); flex-wrap:wrap; }
+  .settings-bar label { font-size:12px; font-weight:500; color:var(--ink-soft); display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .settings-bar input[type="checkbox"] { width:14px; height:14px; cursor:pointer; accent-color:var(--amber); }
+  .settings-divider { width:1px; height:18px; background:var(--rule); }
+  .pace-legend { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .pace-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:500; }
+  .pace-chip.normal  { background:var(--paper);      color:var(--ink-soft);  border:1px solid var(--rule); }
+  .pace-chip.busy    { background:var(--amber-lt);   color:var(--amber);     border:1px solid #FDE68A; }
+  .pace-chip.relaxed { background:var(--green-lt);   color:var(--green);     border:1px solid #BBF7D0; }
+  .pace-chip.chaos   { background:var(--red-lt);     color:var(--red);       border:1px solid #FECACA; }
+
+  .summary-bar { display:flex; gap:16px; margin-bottom:28px; flex-wrap:wrap; }
+  .stat-pill { background:var(--paper); border:1px solid var(--rule); border-radius:8px; padding:10px 16px; display:flex; flex-direction:column; gap:2px; }
+  .stat-pill .stat-value { font-family:var(--serif); font-size:20px; font-weight:700; line-height:1; }
+  .stat-pill .stat-label { font-size:11px; font-weight:500; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-soft); }
+  .stat-pill.highlight { background:var(--amber-lt); border-color:#FDE68A; }
+  .stat-pill.highlight .stat-value { color:var(--amber); }
+
+  /* Day schedule input row */
+  .schedule-row { display:flex; gap:8px; margin-bottom:24px; flex-wrap:wrap; }
+  .day-pace-select { display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .day-pace-select .day-abbr { font-size:10px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-soft); }
+  .day-pace-select select { font-size:11px; font-family:var(--sans); padding:4px 2px; border:1.5px solid var(--rule); border-radius:6px; background:var(--paper); color:var(--ink); cursor:pointer; text-align:center; width:76px; }
+  .day-pace-select select:focus { outline:none; border-color:var(--amber); }
+  .day-pace-select select.pace-busy    { border-color:#FDE68A; background:var(--amber-lt); color:var(--amber); }
+  .day-pace-select select.pace-relaxed { border-color:#BBF7D0; background:var(--green-lt); color:var(--green); }
+  .day-pace-select select.pace-chaos   { border-color:#FECACA; background:var(--red-lt);   color:var(--red); }
+
+  .day-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(148px,1fr)); gap:12px; }
+  .day-card { background:var(--paper); border:1px solid var(--rule); border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow); animation:fadeUp .3s ease both; }
+  .day-card.is-chaos   { border-color:#FECACA; background:#FFFAFA; }
+  .day-card.is-leftover-day { border-color:#BBF7D0; }
+  .day-card:nth-child(1){animation-delay:.03s} .day-card:nth-child(2){animation-delay:.06s}
+  .day-card:nth-child(3){animation-delay:.09s} .day-card:nth-child(4){animation-delay:.12s}
+  .day-card:nth-child(5){animation-delay:.15s} .day-card:nth-child(6){animation-delay:.18s}
+  .day-card:nth-child(7){animation-delay:.21s}
+  @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+  .day-header { padding:8px 12px; border-bottom:1px solid var(--rule); display:flex; justify-content:space-between; align-items:center; gap:6px; }
+  .day-name { font-size:11px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-soft); }
+  .day-date { font-size:10px; color:var(--ink-soft); opacity:.7; }
+  .day-meals { padding:10px 12px; display:flex; flex-direction:column; gap:11px; }
+
+  .meal-type-label { font-size:9px; font-weight:500; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-soft); margin-bottom:3px; opacity:.7; }
+  .meal-item { display:flex; flex-direction:column; gap:5px; }
+  .meal-name-row { display:flex; align-items:flex-start; gap:4px; }
+  .meal-name { font-size:12px; font-weight:500; line-height:1.3; color:var(--ink); flex:1; }
+  .meal-name a { color:inherit; text-decoration:none; border-bottom:1px dotted var(--ink-soft); }
+  .meal-name a:hover { border-bottom-color:var(--amber); color:var(--amber); }
+  .meal-name.is-manual   { color:var(--blue); }
+  .meal-name.is-fallback { color:var(--red); }
+  .meal-name.is-leftover { color:var(--green); }
+  .meal-na { font-size:11px; color:var(--ink-soft); font-style:italic; opacity:.65; }
+
+  .meal-actions { display:flex; gap:3px; align-items:center; flex-wrap:wrap; }
+  .slot-btn { width:22px; height:22px; border-radius:5px; border:1px solid var(--rule); background:transparent; cursor:pointer; font-size:11px; display:inline-flex; align-items:center; justify-content:center; color:var(--ink-soft); transition:all var(--t); flex-shrink:0; }
+  .slot-btn:hover { background:var(--cream); border-color:var(--ink-soft); color:var(--ink); }
+  .slot-btn.regen:hover  { border-color:var(--amber); color:var(--amber); background:var(--amber-lt); }
+  .slot-btn.thumbdown.active { background:var(--red-lt); border-color:#FECACA; color:var(--red); }
+  .slot-btn.thumbdown:hover  { border-color:var(--red); color:var(--red); background:var(--red-lt); }
+
+  .badge { display:inline-flex; align-items:center; padding:1px 5px; border-radius:4px; font-size:9px; font-weight:500; }
+  .badge-time     { background:var(--cream); color:var(--ink-soft); border:1px solid var(--rule); }
+  .badge-manual   { background:var(--blue-lt);   color:var(--blue); }
+  .badge-new      { background:var(--green-lt);  color:var(--green); letter-spacing:.04em; text-transform:uppercase; font-size:8px; }
+  .badge-fallback { background:var(--red-lt);    color:var(--red); }
+  .badge-leftover { background:var(--green-lt);  color:var(--green); }
+
+  /* Chaos day banner inside card */
+  .chaos-banner { font-size:10px; color:var(--red); font-weight:500; letter-spacing:.04em; text-align:center; padding:4px 0 2px; opacity:.8; }
+
+  .excl-banner { display:flex; align-items:center; gap:8px; background:var(--red-lt); border:1px solid #FECACA; border-radius:8px; padding:10px 14px; margin-bottom:20px; font-size:13px; color:var(--red); }
+
+  .stat-pill.over-budget { background:var(--red-lt); border-color:#FECACA; }
+  .stat-pill.over-budget .stat-value { color:var(--red); }
+  .stat-pill.under-budget { background:var(--green-lt); border-color:#BBF7D0; }
+  .stat-pill.under-budget .stat-value { color:var(--green); }
+  .confirm-bar { display:flex; align-items:center; gap:12px; margin-top:28px; padding:16px 20px; background:var(--green-lt); border:1.5px solid #BBF7D0; border-radius:var(--radius); }
+  .confirm-bar p { font-size:13px; color:var(--green); flex:1; }
+  .confirm-bar strong { font-weight:600; }
+  .btn-confirm { background:var(--green); color:white; border-color:var(--green); }
+  .btn-confirm:hover { background:#166534; }
+
+  /* Already confirmed banner */
+  .confirmed-badge { display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:20px; font-size:12px; font-weight:500; background:var(--green-lt); color:var(--green); border:1px solid #BBF7D0; }
+
+  /* History tab */
+  .history-empty { text-align:center; padding:60px 20px; color:var(--ink-soft); }
+  .history-empty .icon { font-size:36px; margin-bottom:12px; }
+  .history-empty h3 { font-family:var(--serif); font-size:20px; margin-bottom:6px; color:var(--ink); }
+
+  .history-list { display:flex; flex-direction:column; gap:16px; }
+
+  .history-card { background:var(--paper); border:1px solid var(--rule); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; }
+  .history-card-header { display:flex; align-items:center; gap:14px; padding:14px 18px; cursor:pointer; user-select:none; }
+  .history-card-header:hover { background:#FAFAF8; }
+  .history-week-label { font-family:var(--serif); font-size:16px; font-weight:700; flex:1; }
+  .history-meta { font-size:12px; color:var(--ink-soft); }
+  .history-chevron { font-size:13px; color:var(--ink-soft); transition:transform var(--t); }
+  .history-card.open .history-chevron { transform:rotate(180deg); }
+
+  .history-card-body { display:none; border-top:1px solid var(--rule); }
+  .history-card.open .history-card-body { display:block; }
+
+  .history-day-row { display:flex; gap:0; border-bottom:1px solid var(--rule); }
+  .history-day-row:last-child { border-bottom:none; }
+  .history-day-name { width:96px; flex-shrink:0; padding:10px 14px; font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-soft); border-right:1px solid var(--rule); display:flex; align-items:center; }
+  .history-meals { display:flex; flex:1; flex-wrap:wrap; }
+  .history-meal-cell { flex:1; min-width:120px; padding:10px 14px; border-right:1px solid var(--rule); }
+  .history-meal-cell:last-child { border-right:none; }
+  .history-meal-type { font-size:9px; font-weight:500; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-soft); opacity:.7; margin-bottom:3px; }
+  .history-meal-name { font-size:12px; font-weight:500; color:var(--ink); line-height:1.3; }
+  .history-meal-name.is-na       { color:var(--ink-soft); font-style:italic; }
+  .history-meal-name.is-leftover { color:var(--green); }
+  .history-meal-name.is-fallback { color:var(--red); }
+  .history-meal-name.is-chaos    { color:var(--red); opacity:.7; }
+
+  .history-stats-row { display:flex; gap:16px; padding:12px 18px; background:var(--cream); border-top:1px solid var(--rule); flex-wrap:wrap; }
+  .history-stat { font-size:12px; color:var(--ink-soft); }
+  .history-stat strong { color:var(--ink); font-weight:600; }
+
+  /* Grocery */
+  .grocery-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px; }
+  .section-title { font-family:var(--serif); font-size:20px; font-weight:700; }
+  .grocery-stats { display:flex; gap:12px; align-items:center; }
+  .grocery-stat { font-size:13px; color:var(--ink-soft); }
+  .grocery-stat strong { color:var(--ink); }
+  .grocery-categories { display:flex; flex-direction:column; gap:20px; }
+  .category-title { font-size:11px; font-weight:500; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-soft); padding-bottom:8px; border-bottom:1px solid var(--rule); margin-bottom:10px; display:flex; justify-content:space-between; }
+  .grocery-items { display:flex; flex-direction:column; gap:1px; }
+  .grocery-item { display:flex; align-items:center; gap:10px; padding:7px 10px; border-radius:7px; transition:background var(--t); cursor:pointer; }
+  .grocery-item:hover { background:var(--paper); }
+  .grocery-item.checked { opacity:.45; }
+  .grocery-item.checked .item-name { text-decoration:line-through; }
+  .item-check { width:16px; height:16px; border:1.5px solid var(--rule); border-radius:4px; flex-shrink:0; display:flex; align-items:center; justify-content:center; transition:all var(--t); font-size:10px; }
+  .grocery-item.checked .item-check { background:var(--green); border-color:var(--green); color:white; }
+  .item-name { font-size:13px; flex:1; }
+  .item-qty  { font-size:11px; color:var(--ink-soft); font-weight:500; white-space:nowrap; }
+  .item-cost { font-size:11px; color:var(--ink-soft); width:42px; text-align:right; }
+
+  /* Modals */
+  .modal-backdrop { position:fixed; inset:0; background:rgba(28,25,23,.35); backdrop-filter:blur(2px); z-index:100; display:flex; align-items:center; justify-content:center; padding:20px; opacity:0; pointer-events:none; transition:opacity var(--t); }
+  .modal-backdrop.open { opacity:1; pointer-events:all; }
+  .modal { background:var(--paper); border-radius:14px; width:100%; max-width:460px; box-shadow:0 20px 60px rgba(28,25,23,.2); overflow:hidden; transform:translateY(12px) scale(.98); transition:transform var(--t); max-height:90vh; display:flex; flex-direction:column; }
+  .modal-backdrop.open .modal { transform:translateY(0) scale(1); }
+  .modal-header { padding:20px 24px 16px; border-bottom:1px solid var(--rule); display:flex; justify-content:space-between; align-items:flex-start; flex-shrink:0; }
+  .modal-title { font-family:var(--serif); font-size:18px; font-weight:700; }
+  .modal-subtitle { font-size:12px; color:var(--ink-soft); margin-top:2px; }
+  .modal-close { background:none; border:none; cursor:pointer; color:var(--ink-soft); font-size:18px; line-height:1; padding:2px; flex-shrink:0; }
+  .modal-close:hover { color:var(--ink); }
+  .modal-body { padding:16px 24px; overflow-y:auto; flex:1; }
+  .modal-footer { padding:0 24px 20px; display:flex; gap:8px; justify-content:flex-end; flex-shrink:0; }
+
+  .action-menu { display:flex; flex-direction:column; gap:6px; }
+  .action-row { display:flex; align-items:center; gap:10px; padding:11px 14px; border:1.5px solid var(--rule); border-radius:9px; cursor:pointer; transition:all var(--t); background:transparent; text-align:left; font-family:var(--sans); width:100%; }
+  .action-row:hover { border-color:var(--amber); background:var(--amber-lt); }
+  .action-row .action-icon { font-size:17px; width:26px; text-align:center; flex-shrink:0; }
+  .action-row .action-label { font-size:13px; font-weight:500; color:var(--ink); }
+  .action-row .action-desc  { font-size:11px; color:var(--ink-soft); margin-top:1px; }
+  .action-row.danger:hover  { border-color:var(--red); background:var(--red-lt); }
+
+  .swap-options { display:flex; flex-direction:column; gap:8px; }
+  .swap-option { display:flex; align-items:center; gap:12px; padding:12px 14px; border:1.5px solid var(--rule); border-radius:9px; cursor:pointer; transition:all var(--t); background:transparent; text-align:left; font-family:var(--sans); width:100%; }
+  .swap-option:hover    { border-color:var(--amber); background:var(--amber-lt); }
+  .swap-option.selected { border-color:var(--ink); background:var(--cream); }
+  .swap-option-info  { flex:1; }
+  .swap-option-name  { font-size:13px; font-weight:500; color:var(--ink); }
+  .swap-option-meta  { font-size:11px; color:var(--ink-soft); margin-top:2px; }
+  .swap-option-score { font-size:13px; font-weight:700; color:var(--amber); font-family:var(--serif); }
+  .back-link { font-size:12px; color:var(--ink-soft); cursor:pointer; margin-bottom:14px; display:inline-flex; align-items:center; gap:4px; }
+  .back-link:hover { color:var(--ink); }
+
+  .form-group { margin-bottom:14px; }
+  .form-label { font-size:11px; font-weight:600; color:var(--ink-soft); margin-bottom:5px; display:block; letter-spacing:.04em; text-transform:uppercase; }
+  .form-input { width:100%; padding:9px 12px; border:1.5px solid var(--rule); border-radius:8px; font-family:var(--sans); font-size:13px; color:var(--ink); background:var(--cream); transition:border-color var(--t); }
+  .form-input:focus { outline:none; border-color:var(--amber); background:var(--paper); }
+  .form-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .ingredient-list { display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
+  .ingredient-row { display:flex; gap:6px; align-items:center; }
+  .ingredient-row .form-input { flex:1; }
+  .ingredient-row .form-input.qty { width:72px; flex:0 0 72px; }
+  .rm-ing { background:none; border:none; color:var(--ink-soft); cursor:pointer; font-size:16px; padding:0 4px; line-height:1; }
+  .rm-ing:hover { color:var(--red); }
+  .add-meal-form { max-width:560px; }
+  .form-section-title { font-size:11px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-soft); margin:20px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--rule); }
+
+  .empty-state { text-align:center; padding:60px 20px; color:var(--ink-soft); }
+  .empty-state .icon { font-size:40px; margin-bottom:12px; }
+  .empty-state h3 { font-family:var(--serif); font-size:20px; margin-bottom:6px; color:var(--ink); }
+  .spinner { display:inline-block; width:14px; height:14px; border:2px solid rgba(255,255,255,.3); border-top-color:white; border-radius:50%; animation:spin .6s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  ::-webkit-scrollbar { width:5px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:var(--rule); border-radius:99px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="brand">
+      <h1>Weekly Feast</h1>
+      <span class="week-label" id="week-label">No plan yet</span>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-outline" id="btn-add-meal" style="display:none" onclick="switchTab('add')">+ Add Meal</button>
+      <button class="btn btn-primary" id="btn-generate" onclick="handleGenerate()">✦ Generate Plan</button>
+    </div>
+  </header>
+
+  <div class="tabs" id="tabs" style="display:none">
+    <button class="tab active" id="tab-plan"    onclick="switchTab('plan')">Meal Plan</button>
+    <button class="tab"        id="tab-grocery" onclick="switchTab('grocery')">Grocery List</button>
+    <button class="tab"        id="tab-history" onclick="switchTab('history')">History</button>
+    <button class="tab"        id="tab-add"     onclick="switchTab('add')">+ Add Meal</button>
+  </div>
+
+  <!-- Plan Panel -->
+  <div class="panel active" id="panel-plan">
+
+    <!-- Schedule + settings (shown before and after generate) -->
+    <div class="settings-bar">
+      <label>
+        <input type="checkbox" id="toggle-leftovers" onchange="rebuildIfPlan()">
+        Use leftovers for next-day lunch
+      </label>
+      <div class="settings-divider"></div>
+      <label style="gap:8px">
+        Weekly budget:
+        <span style="display:inline-flex;align-items:center;gap:4px;border:1.5px solid var(--rule);border-radius:7px;padding:3px 8px;background:var(--paper)">
+          <span style="color:var(--ink-soft);font-size:13px">$</span>
+          <input type="number" id="budget-input" value="150" min="0" step="5"
+            style="width:64px;border:none;background:transparent;font-family:var(--sans);font-size:13px;color:var(--ink);font-weight:500;outline:none"
+            onchange="rebuildIfPlan()" oninput="rebuildIfPlan()">
+        </span>
+      </label>
+      <div class="settings-divider"></div>
+      <span style="font-size:12px;color:var(--ink-soft);font-weight:500">Day pace:</span>
+      <div class="pace-legend">
+        <span class="pace-chip normal">⚪ Normal</span>
+        <span class="pace-chip busy">🟡 Busy</span>
+        <span class="pace-chip relaxed">🟢 Relaxed</span>
+        <span class="pace-chip chaos">🔴 Chaos</span>
+      </div>
+    </div>
+
+    <!-- Per-day pace selectors -->
+    <div class="schedule-row" id="schedule-row">
+      <!-- Rendered by JS -->
+    </div>
+
+    <div class="empty-state" id="empty-state">
+      <div class="icon">🍽️</div>
+      <h3>No plan yet</h3>
+      <p>Set your week's pace above, then hit Generate Plan.</p>
+    </div>
+
+    <div id="plan-content" style="display:none">
+      <div id="excl-banner" style="display:none"></div>
+      <div class="summary-bar" id="summary-bar"></div>
+      <div class="day-grid"    id="day-grid"></div>
+      <!-- Confirm week bar — shown after plan is generated, hidden once confirmed -->
+      <div class="confirm-bar" id="confirm-bar" style="display:none">
+        <p><strong>Happy with this week?</strong> Confirm to lock it in, update meal history, and enable next week's planning.</p>
+        <button class="btn btn-confirm" onclick="confirmWeek()">✓ Confirm Week</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Grocery Panel -->
+  <div class="panel" id="panel-grocery">
+    <div class="grocery-header">
+      <div class="section-title">Grocery List</div>
+      <div class="grocery-stats">
+        <span class="grocery-stat"><strong id="grocery-item-count">0</strong> items</span>
+        <span class="grocery-stat">Est. <strong id="grocery-cost">$0</strong></span>
+        <button class="btn btn-ghost" onclick="uncheckAll()">Uncheck all</button>
+      </div>
+    </div>
+    <div class="grocery-categories" id="grocery-categories"></div>
+  </div>
+
+  <!-- History Panel -->
+  <div class="panel" id="panel-history">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+      <div class="section-title">Meal History</div>
+      <div style="font-size:13px; color:var(--ink-soft)"><strong id="history-week-count">0</strong> confirmed weeks</div>
+    </div>
+    <div id="history-content"></div>
+  </div>
+
+  <!-- Add Meal Panel -->
+  <div class="panel" id="panel-add">
+    <div class="section-title" style="margin-bottom:20px">Add a Meal</div>
+    <div class="add-meal-form">
+      <div class="form-group">
+        <label class="form-label">Meal Name *</label>
+        <input class="form-input" id="new-name" placeholder="e.g. Chicken Stir-Fry">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Meal Type *</label>
+          <select class="form-input" id="new-type">
+            <option value="dinner">Dinner</option>
+            <option value="breakfast">Breakfast</option>
+            <option value="lunch">Lunch</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Kid Approval (1–5)</label>
+          <input class="form-input" id="new-kid" type="number" min="1" max="5" value="3">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Prep Time (min)</label>
+          <input class="form-input" id="new-prep" type="number" min="0" value="10">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cook Time (min)</label>
+          <input class="form-input" id="new-cook" type="number" min="0" value="20">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Recipe Link (optional)</label>
+        <input class="form-input" id="new-recipe-link" type="url" placeholder="https://...">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tags (comma-separated)</label>
+        <input class="form-input" id="new-tags" placeholder="e.g. italian, kid-friendly, quick">
+      </div>
+      <div class="form-section-title">Ingredients</div>
+      <div class="ingredient-list" id="new-ingredient-list">
+        <div class="ingredient-row">
+          <input class="form-input" placeholder="Ingredient name" data-ing="name">
+          <input class="form-input qty" placeholder="Qty" data-ing="qty">
+          <input class="form-input qty" placeholder="$" type="number" step="0.01" data-ing="cost">
+          <button class="rm-ing" onclick="rmIngRow(this)">×</button>
+        </div>
+      </div>
+      <button class="btn btn-ghost" style="margin-bottom:20px" onclick="addIngRow()">+ Add ingredient</button>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-primary" onclick="submitNewMeal()">Save Meal</button>
+        <button class="btn btn-ghost"   onclick="clearMealForm()">Clear</button>
+      </div>
+      <div id="add-meal-feedback" style="margin-top:12px;font-size:13px"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Confirm Week Modal -->
+<div class="modal-backdrop" id="modal-confirm" onclick="closeModal('modal-confirm',event)">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Confirm This Week</div>
+        <div class="modal-subtitle" id="confirm-modal-subtitle"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-confirm')">✕</button>
+    </div>
+    <div class="modal-body" id="confirm-modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-confirm')">Cancel</button>
+      <button class="btn btn-confirm" onclick="doConfirmWeek()">✓ Confirm &amp; Lock Week</button>
+    </div>
+  </div>
+</div>
+
+<!-- Action Modal -->
+<div class="modal-backdrop" id="modal-action" onclick="closeModal('modal-action',event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title"    id="action-title">Meal Options</div>
+        <div class="modal-subtitle" id="action-subtitle"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-action')">✕</button>
+    </div>
+    <div class="modal-body"   id="action-body"></div>
+    <div class="modal-footer" id="action-footer"></div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// DATA
+// ═══════════════════════════════════════════════════════════════════
+
+const NA          = "__NA__";
+const LEFTOVER    = "__LEFTOVER__";
+
+// ── Fallback meals (Step 10) ──────────────────────────────────────
+// Used on "chaos" days — no scoring, no rotation impact.
+const FALLBACK_MEALS = [
+  { id:"fb_1",  name:"Frozen Pizza",                    mealType:"dinner",    totalTime:20, totalCostEstimate:8  },
+  { id:"fb_2",  name:"Cereal for Dinner",               mealType:"dinner",    totalTime:2,  totalCostEstimate:4  },
+  { id:"fb_3",  name:"PB&J + Fruit",                    mealType:"dinner",    totalTime:5,  totalCostEstimate:4  },
+  { id:"fb_4",  name:"Scrambled Eggs & Toast",          mealType:"dinner",    totalTime:15, totalCostEstimate:5  },
+  { id:"fb_5",  name:"Drive-Through Burgers",           mealType:"dinner",    totalTime:15, totalCostEstimate:20 },
+  { id:"fb_6",  name:"Instant Ramen",                   mealType:"dinner",    totalTime:5,  totalCostEstimate:3  },
+  { id:"fb_7",  name:"Cheese Quesadillas",              mealType:"dinner",    totalTime:10, totalCostEstimate:5  },
+  { id:"fb_8",  name:"Cereal & Milk",                   mealType:"breakfast", totalTime:2,  totalCostEstimate:3  },
+  { id:"fb_9",  name:"Granola Bar + Juice",             mealType:"breakfast", totalTime:1,  totalCostEstimate:3  },
+  { id:"fb_10", name:"Leftovers (whatever's in the fridge)", mealType:"lunch", totalTime:5, totalCostEstimate:0  },
+  { id:"fb_11", name:"Deli Sandwiches",                 mealType:"lunch",     totalTime:5,  totalCostEstimate:8  },
+];
+const FB_LOOKUP = Object.fromEntries(FALLBACK_MEALS.map(m => [m.id, m]));
+
+let MEALS = [
+  {id:"b1",name:"Scrambled Eggs & Toast",    mealType:"breakfast",kidApprovalScore:4,prepTime:5, cookTime:10,totalTime:15,totalCostEstimate:6, tags:["easy","quick"],             recipeLink:null,                                                        thumbedDown:false,ingredients:[{name:"eggs",quantity:"8",estimatedCost:2},{name:"bread",quantity:"4 slices",estimatedCost:1},{name:"butter",quantity:"2 tbsp",estimatedCost:.5},{name:"milk",quantity:"1/4 cup",estimatedCost:.3}]},
+  {id:"b2",name:"Pancakes",                  mealType:"breakfast",kidApprovalScore:5,prepTime:10,cookTime:20,totalTime:30,totalCostEstimate:8, tags:["kid-friendly","weekend"],    recipeLink:"https://www.allrecipes.com/recipe/21014/good-old-fashioned-pancakes/",thumbedDown:false,ingredients:[{name:"flour",quantity:"2 cups",estimatedCost:1},{name:"eggs",quantity:"2",estimatedCost:.5},{name:"milk",quantity:"1 cup",estimatedCost:.5},{name:"maple syrup",quantity:"1/4 cup",estimatedCost:1},{name:"butter",quantity:"2 tbsp",estimatedCost:.5}]},
+  {id:"b3",name:"Yogurt & Fruit Parfait",    mealType:"breakfast",kidApprovalScore:4,prepTime:5, cookTime:0, totalTime:5, totalCostEstimate:7, tags:["no-cook","quick"],           recipeLink:null,thumbedDown:false,ingredients:[{name:"yogurt",quantity:"2 cups",estimatedCost:3},{name:"strawberry",quantity:"1 cup",estimatedCost:2},{name:"blueberry",quantity:"1/2 cup",estimatedCost:2},{name:"honey",quantity:"2 tbsp",estimatedCost:.5}]},
+  {id:"b4",name:"Avocado Toast",             mealType:"breakfast",kidApprovalScore:3,prepTime:5, cookTime:5, totalTime:10,totalCostEstimate:9, tags:["quick"],                    recipeLink:null,thumbedDown:false,ingredients:[{name:"avocado",quantity:"2",estimatedCost:3},{name:"bread",quantity:"4 slices",estimatedCost:1},{name:"lemon",quantity:"1",estimatedCost:.5},{name:"eggs",quantity:"4",estimatedCost:1}]},
+  {id:"b5",name:"Cereal & Milk",             mealType:"breakfast",kidApprovalScore:4,prepTime:2, cookTime:0, totalTime:2, totalCostEstimate:5, tags:["no-cook","quick"],           recipeLink:null,thumbedDown:false,ingredients:[{name:"cereal",quantity:"1 box",estimatedCost:4},{name:"milk",quantity:"2 cups",estimatedCost:1}]},
+  {id:"l1",name:"Grilled Cheese",            mealType:"lunch",    kidApprovalScore:5,prepTime:5, cookTime:10,totalTime:15,totalCostEstimate:7, tags:["kid-friendly","easy"],       recipeLink:null,thumbedDown:false,ingredients:[{name:"bread",quantity:"8 slices",estimatedCost:1.5},{name:"cheddar cheese",quantity:"1 cup",estimatedCost:2},{name:"butter",quantity:"2 tbsp",estimatedCost:.5},{name:"tomato",quantity:"2",estimatedCost:1}]},
+  {id:"l2",name:"Turkey & Cheese Wraps",     mealType:"lunch",    kidApprovalScore:4,prepTime:10,cookTime:0, totalTime:10,totalCostEstimate:10,tags:["no-cook","quick"],           recipeLink:null,thumbedDown:false,ingredients:[{name:"tortilla",quantity:"5",estimatedCost:2},{name:"turkey",quantity:"1 lb",estimatedCost:5},{name:"cheddar cheese",quantity:"1/2 cup",estimatedCost:1},{name:"lettuce",quantity:"1 cup",estimatedCost:.5},{name:"tomato",quantity:"1",estimatedCost:.5}]},
+  {id:"l3",name:"Mac & Cheese",              mealType:"lunch",    kidApprovalScore:5,prepTime:5, cookTime:15,totalTime:20,totalCostEstimate:6, tags:["kid-friendly"],              recipeLink:null,thumbedDown:false,ingredients:[{name:"pasta",quantity:"1 lb",estimatedCost:1.5},{name:"cheddar cheese",quantity:"2 cups",estimatedCost:4},{name:"milk",quantity:"1/2 cup",estimatedCost:.3},{name:"butter",quantity:"2 tbsp",estimatedCost:.5}]},
+  {id:"l4",name:"Veggie Quesadillas",        mealType:"lunch",    kidApprovalScore:4,prepTime:10,cookTime:10,totalTime:20,totalCostEstimate:9, tags:["vegetarian"],                recipeLink:null,thumbedDown:false,ingredients:[{name:"tortilla",quantity:"8",estimatedCost:2},{name:"mozzarella cheese",quantity:"1 cup",estimatedCost:2},{name:"pepper",quantity:"2",estimatedCost:1},{name:"corn",quantity:"1 cup",estimatedCost:1},{name:"salsa",quantity:"1 jar",estimatedCost:3}]},
+  {id:"l5",name:"PB&J Sandwiches",           mealType:"lunch",    kidApprovalScore:5,prepTime:5, cookTime:0, totalTime:5, totalCostEstimate:5, tags:["no-cook","kid-friendly"],   recipeLink:null,thumbedDown:false,ingredients:[{name:"bread",quantity:"10 slices",estimatedCost:1.5},{name:"jam",quantity:"4 tbsp",estimatedCost:1},{name:"butter",quantity:"4 tbsp",estimatedCost:.5}]},
+  {id:"d1",name:"Sheet Pan Chicken Tacos",   mealType:"dinner",   kidApprovalScore:4,prepTime:15,cookTime:30,totalTime:45,totalCostEstimate:17,tags:["mexican","kid-friendly"],   recipeLink:"https://www.foodnetwork.com/recipes/sheet-pan-chicken-tacos",thumbedDown:false,ingredients:[{name:"chicken thighs",quantity:"2 lbs",estimatedCost:7},{name:"taco seasoning",quantity:"1 packet",estimatedCost:1},{name:"tortilla",quantity:"12",estimatedCost:3},{name:"shredded cheese",quantity:"1 cup",estimatedCost:2.5},{name:"salsa",quantity:"1 jar",estimatedCost:3}]},
+  {id:"d2",name:"Spaghetti & Meat Sauce",    mealType:"dinner",   kidApprovalScore:5,prepTime:10,cookTime:30,totalTime:40,totalCostEstimate:14,tags:["italian","kid-friendly"],   recipeLink:"https://www.simplyrecipes.com/recipes/spaghetti_meat_sauce/",thumbedDown:false,ingredients:[{name:"pasta",quantity:"1 lb",estimatedCost:1.5},{name:"ground beef",quantity:"1 lb",estimatedCost:6},{name:"tomato sauce",quantity:"2 cups",estimatedCost:2},{name:"garlic",quantity:"4 cloves",estimatedCost:.5},{name:"parmesan cheese",quantity:"1/2 cup",estimatedCost:2}]},
+  {id:"d3",name:"Homemade Pizza",            mealType:"dinner",   kidApprovalScore:5,prepTime:20,cookTime:20,totalTime:40,totalCostEstimate:16,tags:["italian","kid-friendly","weekend"],recipeLink:"https://www.kingarthurbaking.com/recipes/pizza-crust-recipe",thumbedDown:false,ingredients:[{name:"flour",quantity:"3 cups",estimatedCost:1},{name:"tomato sauce",quantity:"1 cup",estimatedCost:1.5},{name:"mozzarella cheese",quantity:"2 cups",estimatedCost:4},{name:"pepperoni",quantity:"1/2 cup",estimatedCost:3},{name:"olive oil",quantity:"2 tbsp",estimatedCost:.5}]},
+  {id:"d4",name:"Lemon Herb Salmon",         mealType:"dinner",   kidApprovalScore:3,prepTime:10,cookTime:20,totalTime:30,totalCostEstimate:22,tags:["healthy","quick"],           recipeLink:"https://www.bonappetit.com/recipe/easy-salmon",thumbedDown:false,ingredients:[{name:"salmon",quantity:"2 lbs",estimatedCost:16},{name:"lemon",quantity:"2",estimatedCost:1},{name:"garlic",quantity:"3 cloves",estimatedCost:.3},{name:"butter",quantity:"3 tbsp",estimatedCost:.7},{name:"asparagus",quantity:"1 lb",estimatedCost:4}]},
+  {id:"d5",name:"Chicken Quesadillas",       mealType:"dinner",   kidApprovalScore:5,prepTime:10,cookTime:15,totalTime:25,totalCostEstimate:13,tags:["kid-friendly","quick","mexican"],recipeLink:null,thumbedDown:false,ingredients:[{name:"chicken breast",quantity:"1.5 lbs",estimatedCost:7},{name:"tortilla",quantity:"8",estimatedCost:2},{name:"cheddar cheese",quantity:"1.5 cups",estimatedCost:3},{name:"sour cream",quantity:"1/2 cup",estimatedCost:1}]},
+  {id:"d6",name:"Beef & Broccoli Stir-Fry", mealType:"dinner",   kidApprovalScore:3,prepTime:15,cookTime:15,totalTime:30,totalCostEstimate:18,tags:["asian"],                    recipeLink:"https://www.recipetineats.com/beef-and-broccoli/",thumbedDown:false,ingredients:[{name:"beef",quantity:"1.5 lbs",estimatedCost:11},{name:"broccoli",quantity:"2 cups",estimatedCost:2},{name:"soy sauce",quantity:"3 tbsp",estimatedCost:.5},{name:"garlic",quantity:"3 cloves",estimatedCost:.3},{name:"rice",quantity:"2 cups",estimatedCost:1}]},
+  {id:"d7",name:"Baked Pasta Bake",          mealType:"dinner",   kidApprovalScore:4,prepTime:20,cookTime:35,totalTime:55,totalCostEstimate:15,tags:["italian","weekend"],         recipeLink:null,thumbedDown:false,ingredients:[{name:"pasta",quantity:"1 lb",estimatedCost:1.5},{name:"ground beef",quantity:"1 lb",estimatedCost:6},{name:"tomato sauce",quantity:"2 cups",estimatedCost:2},{name:"mozzarella cheese",quantity:"2 cups",estimatedCost:4},{name:"parmesan cheese",quantity:"1/2 cup",estimatedCost:2}]},
+  {id:"d8",name:"Korean Beef Bowls",         mealType:"dinner",   kidApprovalScore:3,prepTime:15,cookTime:20,totalTime:35,totalCostEstimate:19,tags:["asian","new"],              recipeLink:"https://www.budgetbytes.com/korean-beef-bowl/",thumbedDown:false,ingredients:[{name:"ground beef",quantity:"1.5 lbs",estimatedCost:9},{name:"rice",quantity:"2 cups",estimatedCost:1},{name:"soy sauce",quantity:"4 tbsp",estimatedCost:.5},{name:"garlic",quantity:"4 cloves",estimatedCost:.4},{name:"ginger",quantity:"1 tsp",estimatedCost:.3},{name:"scallion",quantity:"4",estimatedCost:.5}]},
+];
+
+function buildLookup() { return Object.fromEntries(MEALS.map(m=>[m.id,m])); }
+let ML = buildLookup();
+
+const DAYS  = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+const TYPES = ["breakfast","lunch","dinner"];
+const WEEKEND = new Set(["Saturday","Sunday"]);
+
+const TIME_BUDGETS = {
+  busy:    { dinner:30, breakfast:20, lunch:20 },
+  normal:  { dinner:45, breakfast:25, lunch:30 },
+  relaxed: { dinner:90, breakfast:40, lunch:45 },
+  chaos:   { dinner:0,  breakfast:0,  lunch:0  },
+};
+
+function loadTD()  { try { return new Set(JSON.parse(sessionStorage.getItem("td")||"[]")); } catch { return new Set(); } }
+function saveTD(s) { sessionStorage.setItem("td", JSON.stringify([...s])); }
+let thumbedDown = loadTD();
+
+// ═══════════════════════════════════════════════════════════════════
+// SCHEDULING HELPERS
+// ═══════════════════════════════════════════════════════════════════
+
+function getDayPace(dayName, schedule) {
+  const v = schedule[dayName];
+  if (v && TIME_BUDGETS[v]) return v;
+  return WEEKEND.has(dayName) ? "relaxed" : "normal";
+}
+
+function getSchedule() {
+  const s = {};
+  DAYS.forEach(d => {
+    const el = document.getElementById("pace-" + d);
+    if (el) s[d] = el.value;
+  });
+  return s;
+}
+
+function getBudget() {
+  return parseFloat(document.getElementById("budget-input")?.value) || 150;
+}
+
+function getUseLeftovers() {
+  return document.getElementById("toggle-leftovers")?.checked || false;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ROTATION / SCORING
+// ═══════════════════════════════════════════════════════════════════
+
+const MIN_GAP=5, REC_WIN=14, TAG_PEN=12, PRO_PEN=10;
+const PROTO_KW=["chicken","beef","pork","turkey","salmon","shrimp","tuna","lamb","sausage","bacon","ham","cod"];
+const OP_TAGS=new Set(["kid-friendly","quick","easy","no-cook","weekend","healthy","new","vegetarian","gluten-containing"]);
+
+function norm(n)   { return n.toLowerCase().trim().replace(/s$/,""); }
+function dSince(d) { if(!d) return Infinity; return Math.floor((Date.now()-new Date(d))/86400000); }
+function proto(m)  { const t=(m.ingredients||[]).map(i=>i.name.toLowerCase()).join(" "); return PROTO_KW.find(p=>t.includes(p))||null; }
+function ctags(m)  { return (m.tags||[]).filter(t=>!OP_TAGS.has(t)); }
+
+function buildRotMap(history) {
+  const map={};
+  for(const p of history) for(const d of p.days||[]) for(const [,mid] of Object.entries(d.meals||{})) {
+    if(!mid||mid===NA||mid===LEFTOVER||FB_LOOKUP[mid]) continue;
+    if(!map[mid]||d.date>map[mid]) map[mid]=d.date;
+  }
+  return map;
+}
+
+/**
+ * Scores a meal 0–100.
+ * When a remaining budget is passed in, cheaper meals receive a bonus
+ * proportional to how tight the budget is. The bonus maxes out at 15 pts
+ * so it nudges rather than overrides kid approval or recency.
+ *
+ * @param {Object} m
+ * @param {Object} rotMap
+ * @param {Object} wCtx
+ * @param {number} [remainingBudget]  - dollars left for the week; null = ignore
+ * @param {number} [totalBudget]      - original weekly budget; used to gauge tightness
+ */
+function scoreMeal(m, rotMap, wCtx, remainingBudget=null, totalBudget=null) {
+  const kid  = ((m.kidApprovalScore||3)/5)*50;
+  const last = rotMap[m.id]||m.lastServed||null;
+  const rec  = dSince(last)>=REC_WIN ? 30 : (dSince(last)/REC_WIN)*30;
+  const ch   = ctags(m).filter(t=>wCtx.c.has(t)).length;
+  const ph   = proto(m)&&wCtx.p.has(proto(m)) ? 1 : 0;
+  const varietyPenalty = ch*TAG_PEN + ph*PRO_PEN;
+
+  // Budget bonus: applied when we know how much is left
+  // Tightness = how close we are to running out (0 = plenty of room, 1 = at limit)
+  // A meal costing less than average gets a bonus scaled by tightness.
+  let budgetBonus = 0;
+  if (remainingBudget !== null && totalBudget && totalBudget > 0) {
+    const cost = m.totalCostEstimate || 0;
+    const avgMealCost = totalBudget / 21; // 21 slots per week
+    const tightness = Math.max(0, 1 - (remainingBudget / totalBudget));
+    if (cost < avgMealCost) {
+      budgetBonus = tightness * 15 * ((avgMealCost - cost) / avgMealCost);
+    }
+  }
+
+  return Math.min(100, Math.max(0, kid + rec + 12 - varietyPenalty + budgetBonus));
+}
+
+function pickBestFallback(type) {
+  return FALLBACK_MEALS.filter(m=>m.mealType===type).sort((a,b)=>a.totalTime-b.totalTime)[0]
+    || FALLBACK_MEALS[0];
+}
+
+/**
+ * Picks one meal for a slot, respecting budget as a hard cap when tight.
+ *
+ * Hard cap logic:
+ *   - If remaining budget >= 20% of total: no hard cap, just scoring nudge.
+ *   - If remaining budget < 20% of total: filter to meals at or under the
+ *     per-slot share of remaining budget. Falls back gracefully if nothing fits.
+ *
+ * @param {string} type
+ * @param {Set}    usedIds
+ * @param {string} pace
+ * @param {Object} rotMap
+ * @param {Object} wCtx
+ * @param {number} remainingBudget  - dollars left this week
+ * @param {number} totalBudget      - original weekly budget
+ */
+function pickOne(type, usedIds, pace, rotMap, wCtx, remainingBudget, totalBudget) {
+  if (pace === "chaos") return pickBestFallback(type);
+
+  let pool = MEALS.filter(m =>
+    m.mealType===type &&
+    !thumbedDown.has(m.id) &&
+    !usedIds.has(m.id) &&
+    !(dSince(rotMap[m.id]||m.lastServed||null) < MIN_GAP)
+  );
+  if(!pool.length) pool=MEALS.filter(m=>m.mealType===type&&!thumbedDown.has(m.id)&&!usedIds.has(m.id));
+  if(!pool.length) pool=MEALS.filter(m=>m.mealType===type&&!thumbedDown.has(m.id));
+
+  // Score with budget context
+  pool = pool
+    .map(m=>({...m, _s: scoreMeal(m, rotMap, wCtx, remainingBudget, totalBudget)}))
+    .sort((a,b)=>b._s-a._s);
+
+  // Hard budget cap: only kick in when budget is genuinely tight (< 20% remaining)
+  const budgetIsTight = totalBudget > 0 && remainingBudget < totalBudget * 0.20;
+  if (budgetIsTight && remainingBudget > 0) {
+    // Share of remaining budget this slot can spend: remaining ÷ slots left.
+    // We don't track exact slots remaining so use a conservative divisor of 5
+    // (assumes roughly 5 slots left when budget gets tight).
+    const slotBudget = remainingBudget / 5;
+    const affordable = pool.filter(m => (m.totalCostEstimate||0) <= slotBudget);
+    if (affordable.length) pool = affordable;
+    // If nothing is affordable at all, fall back to full pool — never leave a slot empty
+  }
+
+  // Time preference (pace)
+  const budget_mins = (TIME_BUDGETS[pace]||TIME_BUDGETS.normal)[type];
+  if (pace !== "relaxed") {
+    const fit = pool.filter(m=>m.totalTime<=budget_mins);
+    if (fit.length) pool = fit;
+  }
+
+  const top = pool.slice(0,Math.min(3,pool.length));
+  return top[Math.floor(Math.random()*top.length)]||null;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PLAN GENERATION
+// ═══════════════════════════════════════════════════════════════════
+
+function monday() {
+  const d=new Date(), day=d.getDay();
+  d.setDate(d.getDate()+(day===0?-6:1-day)); d.setHours(0,0,0,0); return d;
+}
+
+function resolveSlot(day, type) {
+  if(day.overrides&&day.overrides[type]) return day.overrides[type].mealId;
+  return day.meals[type]!==undefined ? day.meals[type] : null;
+}
+
+function resolveDisplayMeal(day, type) {
+  // Returns { meal, isFallback, isLeftover, isManual, isNA }
+  const mid = resolveSlot(day, type);
+  if (!mid) return { meal:null, isFallback:false, isLeftover:false, isManual:false, isNA:false };
+  if (mid === NA)       return { meal:null, isFallback:false, isLeftover:false, isManual:false, isNA:true };
+  if (mid === LEFTOVER) {
+    // Resolve to yesterday's dinner name
+    return { meal:null, leftoverName: day._leftoverSource || "Yesterday's dinner", isFallback:false, isLeftover:true, isManual:false, isNA:false };
+  }
+  if (FB_LOOKUP[mid]) return { meal:FB_LOOKUP[mid], isFallback:true, isLeftover:false, isManual:false, isNA:false };
+  const isManual = !!(day.overrides&&day.overrides[type]);
+  return { meal: ML[mid]||null, isFallback:false, isLeftover:false, isManual, isNA:false };
+}
+
+function genPlan(existingDays=null) {
+  const schedule     = getSchedule();
+  const useLeftovers = getUseLeftovers();
+  const totalBudget  = getBudget();           // read from input
+  let   remaining    = totalBudget;           // decremented as slots are filled
+  const history      = JSON.parse(sessionStorage.getItem("ph")||"[]");
+  const rotMap       = buildRotMap(history);
+  const wCtx         = { c:new Set(), p:new Set() };
+  const mon          = monday();
+  const usedIds      = new Set();
+
+  // Pre-seed from locked slots and subtract their costs from remaining
+  if(existingDays) {
+    for(const day of existingDays) for(const type of TYPES) {
+      const mid = resolveSlot(day,type);
+      if(mid&&mid!==NA&&mid!==LEFTOVER&&!FB_LOOKUP[mid]) {
+        usedIds.add(mid);
+        remaining -= (ML[mid]?.totalCostEstimate || 0);
+        const m=ML[mid]; if(m&&type==="dinner"){ ctags(m).forEach(t=>wCtx.c.add(t)); const p=proto(m);if(p)wCtx.p.add(p); }
+      }
+    }
+  }
+
+  // New meal (Saturday dinner)
+  const newMeal = !existingDays ? MEALS.find(m=>m.mealType==="dinner"&&m.tags.includes("new")&&!thumbedDown.has(m.id))||null : null;
+  if(newMeal){
+    usedIds.add(newMeal.id);
+    remaining -= (newMeal.totalCostEstimate || 0);
+    ctags(newMeal).forEach(t=>wCtx.c.add(t)); const p=proto(newMeal);if(p)wCtx.p.add(p);
+  }
+
+  const days = DAYS.map((name,i) => {
+    const dt       = new Date(mon); dt.setDate(mon.getDate()+i);
+    const dateStr  = dt.toISOString().split("T")[0];
+    const exDay    = existingDays?existingDays[i]:null;
+    const meals    = exDay?{...exDay.meals}:{};
+    const overrides= exDay?{...(exDay.overrides||{})}:{};
+    const pace     = getDayPace(name, schedule);
+    const isChaosDay = pace === "chaos";
+
+    if(isChaosDay) {
+      for(const type of TYPES) {
+        const cur = resolveSlot({meals,overrides}, type);
+        if(cur!==null&&cur!==undefined) continue;
+        const fb = pickBestFallback(type);
+        meals[type] = fb.id;
+        remaining -= (fb.totalCostEstimate || 0);
+      }
+      return { date:dateStr, dayOfWeek:name, pace, meals, overrides, isChaosDay:true };
+    }
+
+    for(const type of TYPES) {
+      const cur = resolveSlot({meals,overrides}, type);
+      if(cur!==null&&cur!==undefined) continue;
+
+      if(type==="lunch" && useLeftovers && i>0) {
+        const prev = days[i-1];
+        if(prev && !prev.isChaosDay) {
+          const prevDinner = resolveSlot(prev,"dinner");
+          const isRealDinner = prevDinner && prevDinner!==NA && prevDinner!==LEFTOVER && !FB_LOOKUP[prevDinner];
+          if(isRealDinner) { meals[type]=LEFTOVER; continue; }
+        }
+      }
+
+      if(!existingDays&&type==="dinner"&&name==="Saturday"&&newMeal) {
+        meals[type]=newMeal.id; continue;
+      }
+
+      // Pass current remaining budget into picker
+      const picked = pickOne(type, usedIds, pace, rotMap, wCtx, remaining, totalBudget);
+      meals[type] = picked ? picked.id : null;
+      if(picked && !FB_LOOKUP[picked.id]) {
+        usedIds.add(picked.id);
+        remaining -= (picked.totalCostEstimate || 0);
+        if(type==="dinner"){ ctags(picked).forEach(t=>wCtx.c.add(t)); const p=proto(picked);if(p)wCtx.p.add(p); }
+      }
+    }
+
+    return { date:dateStr, dayOfWeek:name, pace, meals, overrides };
+  });
+
+  // Annotate leftover source names
+  days.forEach((day,i) => {
+    if(i>0 && useLeftovers && days[i].meals.lunch===LEFTOVER) {
+      const prev = days[i-1];
+      const prevDinnerId = resolveSlot(prev,"dinner");
+      const prevMeal = prevDinnerId ? (ML[prevDinnerId]||FB_LOOKUP[prevDinnerId]) : null;
+      day._leftoverSource = prevMeal ? prevMeal.name : "Yesterday's dinner";
+    }
+  });
+
+  const total = days.reduce((s,d)=>s+TYPES.reduce((ss,t)=>{
+    const mid=resolveSlot(d,t);
+    if(!mid||mid===NA||mid===LEFTOVER) return ss;
+    const m=ML[mid]||FB_LOOKUP[mid]; return ss+(m?m.totalCostEstimate:0);
+  },0),0);
+
+  const plan = {
+    id:"plan_"+mon.toISOString().split("T")[0],
+    weekStartDate:mon.toISOString().split("T")[0],
+    weekEndDate:(()=>{const e=new Date(mon);e.setDate(e.getDate()+6);return e.toISOString().split("T")[0]})(),
+    estimatedWeeklyBudget: totalBudget,
+    projectedWeeklyTotal:Math.round(total*100)/100,
+    newMealsThisWeek:newMeal?[{id:newMeal.id,name:newMeal.name}]:[],
+    days,
+  };
+
+  const updated=[...history,plan].slice(-8);
+  sessionStorage.setItem("ph",JSON.stringify(updated));
+  return plan;
+}
+
+function regenSlot(di,type) {
+  const days=currentPlan.days.map((d,i)=>{
+    if(i!==di) return d;
+    const meals={...d.meals}; const overrides={...(d.overrides||{})};
+    delete meals[type]; delete overrides[type];
+    return {...d,meals,overrides};
+  });
+  currentPlan=genPlan(days); recalc();
+}
+
+function recalc() {
+  if(!currentPlan) return;
+  const t=currentPlan.days.reduce((s,d)=>s+TYPES.reduce((ss,type)=>{
+    const mid=resolveSlot(d,type);
+    if(!mid||mid===NA||mid===LEFTOVER) return ss;
+    const m=ML[mid]||FB_LOOKUP[mid]; return ss+(m?m.totalCostEstimate:0);
+  },0),0);
+  currentPlan.projectedWeeklyTotal=Math.round(t*100)/100;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GROCERY LIST
+// ═══════════════════════════════════════════════════════════════════
+
+function groceryList(plan) {
+  const CR=[
+    {c:"Produce",        k:["lettuce","spinach","kale","carrot","celery","cucumber","zucchini","pepper","onion","garlic","tomato","potato","corn","mushroom","avocado","lime","lemon","orange","apple","banana","berry","strawberry","blueberry","grape","mango","herb","cilantro","parsley","basil","scallion","ginger","asparagus"]},
+    {c:"Meat & Seafood", k:["chicken","beef","pork","turkey","lamb","sausage","bacon","ham","salmon","shrimp","tuna","cod","ground beef","ground turkey","steak","thigh","breast","pepperoni","chorizo"]},
+    {c:"Dairy & Eggs",   k:["milk","cream","butter","cheese","cheddar","mozzarella","parmesan","ricotta","cream cheese","sour cream","yogurt","egg"]},
+    {c:"Bread & Bakery", k:["bread","tortilla","bun","roll","pita","naan","bagel","muffin","wrap","biscuit","cracker"]},
+    {c:"Pantry",         k:["flour","sugar","salt","oil","olive oil","vinegar","soy sauce","hot sauce","ketchup","mustard","mayonnaise","pasta","rice","quinoa","oats","cereal","beans","lentil","tomato sauce","tomato paste","broth","stock","honey","maple syrup","peanut butter","jam","jelly","seasoning","spice","cumin","paprika","oregano","taco seasoning","baking"]},
+    {c:"Canned & Jarred",k:["canned","jarred","salsa","pickle"]},
+  ];
+  const cat=n=>{ const l=n.toLowerCase(); for(const r of CR) if(r.k.some(k=>l.includes(k))) return r.c; return "Other"; };
+  const raw={};
+  for(const day of plan.days) for(const type of TYPES) {
+    const mid=resolveSlot(day,type);
+    // Skip NA, leftover sentinel, and fallback meals (no ingredients to add)
+    if(!mid||mid===NA||mid===LEFTOVER||FB_LOOKUP[mid]) continue;
+    const meal=ML[mid]; if(!meal||!meal.ingredients) continue;
+    for(const ing of meal.ingredients) {
+      const key=norm(ing.name);
+      if(!raw[key]) raw[key]={n:ing.name,qty:[],cost:0};
+      if(ing.quantity) raw[key].qty.push(ing.quantity);
+      raw[key].cost+=ing.estimatedCost||0;
+    }
+  }
+  const grp={};
+  for(const [,d] of Object.entries(raw)) {
+    const c=cat(d.n); if(!grp[c]) grp[c]=[];
+    grp[c].push({name:d.n,qty:[...new Set(d.qty)].join(", ")||"as needed",cost:Math.round(d.cost*100)/100});
+  }
+  for(const c of Object.keys(grp)) grp[c].sort((a,b)=>a.name.localeCompare(b.name));
+  const ORD=["Produce","Meat & Seafood","Dairy & Eggs","Bread & Bakery","Canned & Jarred","Pantry","Other"];
+  return { grp, ORD, total:Object.values(grp).flat().length, cost:Math.round(Object.values(grp).flat().reduce((s,i)=>s+i.cost,0)*100)/100 };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════
+
+let currentPlan   = null;
+let checked       = new Set();
+// Confirmed weeks — persisted in localStorage so they survive page reloads.
+// Each entry is a snapshot of the plan at the moment it was confirmed.
+let confirmedWeeks = loadConfirmedWeeks();
+
+function loadConfirmedWeeks() {
+  try { return JSON.parse(localStorage.getItem("wf_confirmed") || "[]"); } catch { return []; }
+}
+function saveConfirmedWeeks() {
+  localStorage.setItem("wf_confirmed", JSON.stringify(confirmedWeeks));
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DATE HELPERS
+// ═══════════════════════════════════════════════════════════════════
+
+function fmtDate(iso) { return new Date(iso+"T00:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}); }
+function fmtRange(p)  { return `${fmtDate(p.weekStartDate)} – ${fmtDate(p.weekEndDate)}`; }
+
+// ═══════════════════════════════════════════════════════════════════
+// RENDER — SCHEDULE ROW
+// ═══════════════════════════════════════════════════════════════════
+
+function renderScheduleRow() {
+  const row = document.getElementById("schedule-row");
+  const ABBR = { Monday:"Mon", Tuesday:"Tue", Wednesday:"Wed", Thursday:"Thu", Friday:"Fri", Saturday:"Sat", Sunday:"Sun" };
+  row.innerHTML = DAYS.map(d => {
+    const defaultVal = WEEKEND.has(d) ? "relaxed" : "normal";
+    return `<div class="day-pace-select">
+      <span class="day-abbr">${ABBR[d]}</span>
+      <select id="pace-${d}" onchange="onPaceChange(this,'${d}')" class="pace-${defaultVal}">
+        <option value="normal"  ${defaultVal==="normal" ?"selected":""}>⚪ Normal</option>
+        <option value="busy"                                            >🟡 Busy</option>
+        <option value="relaxed" ${defaultVal==="relaxed"?"selected":""}>🟢 Relaxed</option>
+        <option value="chaos"                                           >🔴 Chaos</option>
+      </select>
+    </div>`;
+  }).join("");
+}
+
+function onPaceChange(sel, day) {
+  sel.className = "pace-" + sel.value;
+  if (currentPlan) rebuildIfPlan();
+}
+
+function rebuildIfPlan() {
+  if (!currentPlan) return;
+  currentPlan = genPlan();
+  recalc();
+  renderPlan(currentPlan);
+  renderGrocery(currentPlan);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PACE BADGE HELPER
+// ═══════════════════════════════════════════════════════════════════
+
+const PACE_LABEL = { normal:"", busy:"🟡", relaxed:"🟢 Relaxed", chaos:"🔴 Chaos" };
+function paceBadge(pace) {
+  if (!pace || pace === "normal") return "";
+  return `<span class="pace-chip ${pace}" style="font-size:9px;padding:1px 5px">${PACE_LABEL[pace]}</span>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RENDER — PLAN
+// ═══════════════════════════════════════════════════════════════════
+
+function renderPlan(plan) {
+  const newIds = new Set((plan.newMealsThisWeek||[]).map(n=>n.id));
+  const budget   = plan.estimatedWeeklyBudget;
+  const total    = plan.projectedWeeklyTotal;
+  const remaining = Math.round((budget - total) * 100) / 100;
+  const pct      = Math.round((total / budget) * 100);
+  const overBudget = total > budget;
+  const wellUnder  = total <= budget * 0.85;
+
+  const remainingClass = overBudget  ? "stat-pill over-budget"
+                       : wellUnder   ? "stat-pill under-budget"
+                       : "stat-pill";
+  const remainingLabel = overBudget
+    ? `$${Math.abs(remaining).toFixed(2)} over`
+    : `$${remaining.toFixed(2)} left`;
+
+  document.getElementById("summary-bar").innerHTML = `
+    <div class="stat-pill highlight">
+      <span class="stat-value">$${total}</span>
+      <span class="stat-label">Est. total</span>
+    </div>
+    <div class="stat-pill">
+      <span class="stat-value">$${budget}</span>
+      <span class="stat-label">Budget</span>
+    </div>
+    <div class="${remainingClass}">
+      <span class="stat-value">${remainingLabel}</span>
+      <span class="stat-label">${pct}% of budget</span>
+    </div>
+    <div class="stat-pill">
+      <span class="stat-value">${plan.newMealsThisWeek.length}</span>
+      <span class="stat-label">New this week</span>
+    </div>`;
+
+  // Excluded banner
+  const banner = document.getElementById("excl-banner");
+  if(thumbedDown.size>0) {
+    const names=[...thumbedDown].map(id=>ML[id]?.name).filter(Boolean).join(", ");
+    banner.style.display="flex"; banner.className="excl-banner";
+    banner.innerHTML=`<span>👎</span><span><strong>Excluded:</strong> ${names} &nbsp;<button class="btn btn-ghost" style="padding:2px 8px;font-size:11px" onclick="clearTD()">Clear all</button></span>`;
+  } else { banner.style.display="none"; }
+
+  document.getElementById("day-grid").innerHTML = plan.days.map((day,di) => {
+    const hasLeftover = Object.values(day.meals).includes(LEFTOVER);
+    const cardClass   = day.isChaosDay ? "day-card is-chaos" : hasLeftover ? "day-card is-leftover-day" : "day-card";
+
+    const slotsHTML = TYPES.map(type => {
+      const { meal, isFallback, isLeftover, leftoverName, isManual, isNA } = resolveDisplayMeal(day, type);
+      const mid = resolveSlot(day, type);
+      const isNew = meal && newIds.has(meal.id);
+      const isTD  = meal && thumbedDown.has(meal.id);
+
+      let body;
+
+      if (isNA) {
+        body = `<div class="meal-name-row"><span class="meal-na">🍴 Eating out</span></div>
+                <div class="meal-actions"><button class="slot-btn" title="Clear" onclick="clearNA(${di},'${type}')">✕</button></div>`;
+
+      } else if (isLeftover) {
+        // Leftover lunch — show what it is, allow override
+        body = `<div class="meal-name-row">
+                  <span class="meal-name is-leftover">♻️ ${leftoverName||"Yesterday's dinner"}</span>
+                </div>
+                <div class="meal-actions">
+                  <span class="badge badge-leftover">Leftover</span>
+                  <span style="flex:1"></span>
+                  <button class="slot-btn regen" title="Pick a fresh lunch instead" onclick="clearLeftover(${di},'${type}')">↺</button>
+                </div>`;
+
+      } else if (isFallback) {
+        // Fallback / chaos meal
+        body = `<div class="meal-name-row"><span class="meal-name is-fallback">${meal.name}</span></div>
+                <div class="meal-actions">
+                  <span class="badge badge-fallback">Fallback</span>
+                  <span class="badge badge-time">${meal.totalTime}m</span>
+                  <span style="flex:1"></span>
+                  <button class="slot-btn" title="Options" onclick="openModal(${di},'${type}')">···</button>
+                </div>`;
+
+      } else if (!meal) {
+        body = `<div class="meal-name-row"><span class="meal-na">—</span></div>
+                <div class="meal-actions">
+                  <button class="slot-btn regen" title="Auto-fill" onclick="handleRegen(${di},'${type}')">+</button>
+                  <button class="slot-btn" title="Options" onclick="openModal(${di},'${type}')">···</button>
+                </div>`;
+
+      } else {
+        const nameInner = meal.recipeLink
+          ? `<a href="${meal.recipeLink}" target="_blank" rel="noopener">${meal.name}</a>`
+          : meal.name;
+        body = `
+          <div class="meal-name-row">
+            <span class="meal-name${isManual?" is-manual":""}">
+              ${nameInner}
+              ${isNew   ? '<span class="badge badge-new" style="margin-left:3px">New</span>'    : ""}
+              ${isManual? '<span class="badge badge-manual" style="margin-left:3px">Manual</span>': ""}
+            </span>
+          </div>
+          <div class="meal-actions">
+            <span class="badge badge-time">${meal.totalTime}m</span>
+            <span style="flex:1"></span>
+            <button class="slot-btn regen"    title="Regenerate"   onclick="handleRegen(${di},'${type}')">↺</button>
+            <button class="slot-btn thumbdown${isTD?" active":""}" title="${isTD?"Remove exclusion":"Exclude from future"}" onclick="toggleTD('${meal.id}')">👎</button>
+            <button class="slot-btn"           title="More options" onclick="openModal(${di},'${type}')">···</button>
+          </div>`;
+      }
+
+      return `<div class="meal-slot"><div class="meal-type-label">${type}</div><div class="meal-item">${body}</div></div>`;
+    }).join("");
+
+    return `<div class="${cardClass}">
+      <div class="day-header">
+        <span class="day-name">${day.dayOfWeek.slice(0,3)}</span>
+        ${paceBadge(day.pace)}
+        <span class="day-date">${fmtDate(day.date)}</span>
+      </div>
+      ${day.isChaosDay ? '<div class="chaos-banner">🔴 Chaos day — fallback meals</div>' : ""}
+      <div class="day-meals">${slotsHTML}</div>
+    </div>`;
+  }).join("");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RENDER — GROCERY
+// ═══════════════════════════════════════════════════════════════════
+
+function renderGrocery(plan) {
+  const g=groceryList(plan);
+  document.getElementById("grocery-item-count").textContent=g.total;
+  document.getElementById("grocery-cost").textContent=`$${g.cost}`;
+  const EMOJI={"Produce":"🥦","Meat & Seafood":"🥩","Dairy & Eggs":"🥛","Bread & Bakery":"🍞","Pantry":"🫙","Canned & Jarred":"🥫","Other":"📦"};
+  document.getElementById("grocery-categories").innerHTML=g.ORD.filter(c=>g.grp[c]).map(c=>`
+    <div class="grocery-category">
+      <div class="category-title"><span>${EMOJI[c]||"•"} ${c}</span><span>${g.grp[c].length} item${g.grp[c].length!==1?"s":""}</span></div>
+      <div class="grocery-items">${g.grp[c].map(item=>{
+        const key=norm(item.name); const ck=checked.has(key);
+        return `<div class="grocery-item ${ck?"checked":""}" onclick="toggleItem('${key}',this)">
+          <div class="item-check">${ck?"✓":""}</div>
+          <span class="item-name">${item.name}</span>
+          <span class="item-qty">${item.qty}</span>
+          <span class="item-cost">$${item.cost.toFixed(2)}</span>
+        </div>`;
+      }).join("")}</div>
+    </div>`).join("");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// INTERACTIONS
+// ═══════════════════════════════════════════════════════════════════
+
+function handleGenerate() {
+  const btn=document.getElementById("btn-generate");
+  btn.innerHTML='<span class="spinner"></span> Generating…'; btn.disabled=true;
+  setTimeout(()=>{
+    currentPlan=genPlan(); checked.clear();
+    document.getElementById("week-label").textContent=fmtRange(currentPlan);
+    document.getElementById("empty-state").style.display="none";
+    document.getElementById("plan-content").style.display="block";
+    document.getElementById("tabs").style.display="flex";
+    document.getElementById("btn-add-meal").style.display="inline-flex";
+
+    // Show confirm bar only if this week hasn't already been confirmed
+    const alreadyConfirmed = confirmedWeeks.some(w => w.weekId === currentPlan.id);
+    document.getElementById("confirm-bar").style.display = alreadyConfirmed ? "none" : "flex";
+
+    renderPlan(currentPlan); renderGrocery(currentPlan); switchTab("plan");
+    btn.innerHTML="↺ Regenerate"; btn.disabled=false;
+  },380);
+}
+
+function switchTab(t) {
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+  document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));
+  document.getElementById("tab-"+t).classList.add("active");
+  document.getElementById("panel-"+t).classList.add("active");
+  if (t === "history") renderHistory();
+}
+
+function toggleItem(key,el) {
+  checked.has(key)?checked.delete(key):checked.add(key);
+  el.classList.toggle("checked",checked.has(key));
+  el.querySelector(".item-check").textContent=checked.has(key)?"✓":"";
+}
+function uncheckAll() {
+  checked.clear();
+  document.querySelectorAll(".grocery-item").forEach(el=>{ el.classList.remove("checked"); el.querySelector(".item-check").textContent=""; });
+}
+
+function handleRegen(di,type) { regenSlot(di,type); renderPlan(currentPlan); renderGrocery(currentPlan); }
+
+function clearLeftover(di, type) {
+  // Replace LEFTOVER sentinel with a fresh auto-pick
+  currentPlan.days[di].meals[type] = null;
+  regenSlot(di, type);
+  renderPlan(currentPlan); renderGrocery(currentPlan);
+}
+
+function toggleTD(id) { thumbedDown.has(id)?thumbedDown.delete(id):thumbedDown.add(id); saveTD(thumbedDown); renderPlan(currentPlan); renderGrocery(currentPlan); }
+function clearTD() { thumbedDown.clear(); saveTD(thumbedDown); renderPlan(currentPlan); }
+
+function setNA(di,type) {
+  currentPlan.days[di].meals[type]=NA;
+  if(currentPlan.days[di].overrides) delete currentPlan.days[di].overrides[type];
+  recalc(); renderPlan(currentPlan); renderGrocery(currentPlan); closeModal("modal-action");
+}
+function clearNA(di,type) {
+  currentPlan.days[di].meals[type]=null;
+  regenSlot(di,type); renderPlan(currentPlan); renderGrocery(currentPlan);
+}
+function applyOverride(di,type,name) {
+  name=name.trim(); if(!name) return;
+  if(!currentPlan.days[di].overrides) currentPlan.days[di].overrides={};
+  const mid="manual_"+Date.now();
+  currentPlan.days[di].overrides[type]={mealId:mid,name,isManual:true};
+  currentPlan.days[di].meals[type]=null;
+  ML[mid]={id:mid,name,mealType:type,kidApprovalScore:3,prepTime:0,cookTime:0,totalTime:0,totalCostEstimate:0,tags:[],recipeLink:null,thumbedDown:false,ingredients:[]};
+  recalc(); renderPlan(currentPlan); renderGrocery(currentPlan); closeModal("modal-action");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ACTION MODAL
+// ═══════════════════════════════════════════════════════════════════
+
+function openModal(di,type) {
+  const day=currentPlan.days[di];
+  const mid=resolveSlot(day,type);
+  const meal=mid&&mid!==NA&&mid!==LEFTOVER&&!FB_LOOKUP[mid]?ML[mid]:null;
+  document.getElementById("action-subtitle").textContent=`${day.dayOfWeek} · ${type.charAt(0).toUpperCase()+type.slice(1)}`;
+  showMenu(di,type,meal);
+  document.getElementById("modal-action").classList.add("open");
+}
+
+function showMenu(di,type,meal) {
+  document.getElementById("action-title").textContent="Meal Options";
+  document.getElementById("action-footer").innerHTML="";
+  const tdRow=meal&&!meal.id.startsWith("manual_")?`
+    <button class="action-row danger" onclick="toggleTD('${meal.id}');closeModal('modal-action')">
+      <span class="action-icon">👎</span>
+      <div><div class="action-label">${thumbedDown.has(meal.id)?"Remove exclusion":"Thumbs down"}</div>
+      <div class="action-desc">${thumbedDown.has(meal.id)?"Re-enable for future plans":"Exclude from future plans"}</div></div>
+    </button>`:"";
+
+  document.getElementById("action-body").innerHTML=`<div class="action-menu">
+    <button class="action-row" onclick="showSwap(${di},'${type}')">
+      <span class="action-icon">↔</span>
+      <div><div class="action-label">Swap meal</div><div class="action-desc">Choose from the database</div></div>
+    </button>
+    <button class="action-row" onclick="handleRegen(${di},'${type}');closeModal('modal-action')">
+      <span class="action-icon">↺</span>
+      <div><div class="action-label">Regenerate</div><div class="action-desc">Auto-pick a new meal</div></div>
+    </button>
+    <button class="action-row" onclick="showOverride(${di},'${type}')">
+      <span class="action-icon">✏️</span>
+      <div><div class="action-label">Manual override</div><div class="action-desc">Type in any meal name</div></div>
+    </button>
+    <button class="action-row" onclick="setNA(${di},'${type}')">
+      <span class="action-icon">🍴</span>
+      <div><div class="action-label">Mark as N/A</div><div class="action-desc">Eating out or skipping</div></div>
+    </button>
+    ${tdRow}
+  </div>`;
+}
+
+function showSwap(di,type) {
+  const curId=resolveSlot(currentPlan.days[di],type);
+  const opts=MEALS.filter(m=>m.mealType===type&&m.id!==curId&&!thumbedDown.has(m.id));
+  window._swapSel=null;
+  document.getElementById("action-title").textContent="Swap Meal";
+  document.getElementById("action-body").innerHTML=`
+    <div class="back-link" onclick="openModal(${di},'${type}')">← Back</div>
+    <div class="swap-options">${opts.map(m=>`
+      <button class="swap-option" id="so-${m.id}" onclick="selSwap('${m.id}')">
+        <div class="swap-option-info">
+          <div class="swap-option-name">${m.name}${m.recipeLink?` <span style="font-size:10px;color:var(--amber)">🔗</span>`:""}</div>
+          <div class="swap-option-meta">${m.totalTime}min · $${m.totalCostEstimate}</div>
+        </div>
+        <div class="swap-option-score">${m.kidApprovalScore}/5</div>
+      </button>`).join("")}</div>`;
+  document.getElementById("action-footer").innerHTML=`
+    <button class="btn btn-outline" onclick="openModal(${di},'${type}')">Back</button>
+    <button class="btn btn-primary" id="btn-swap-ok" disabled onclick="doSwap(${di},'${type}')">Swap</button>`;
+}
+
+function selSwap(id) {
+  document.querySelectorAll(".swap-option").forEach(o=>o.classList.remove("selected"));
+  document.getElementById("so-"+id)?.classList.add("selected");
+  window._swapSel=id; document.getElementById("btn-swap-ok").disabled=false;
+}
+
+function doSwap(di,type) {
+  if(!window._swapSel) return;
+  if(currentPlan.days[di].overrides) delete currentPlan.days[di].overrides[type];
+  currentPlan.days[di].meals[type]=window._swapSel;
+  window._swapSel=null; recalc(); renderPlan(currentPlan); renderGrocery(currentPlan); closeModal("modal-action");
+}
+
+function showOverride(di,type) {
+  document.getElementById("action-title").textContent="Manual Override";
+  document.getElementById("action-body").innerHTML=`
+    <div class="back-link" onclick="openModal(${di},'${type}')">← Back</div>
+    <div class="form-group">
+      <label class="form-label">Meal name</label>
+      <input class="form-input" id="ov-input" placeholder="e.g. Leftover pizza, Takeout Thai"
+        onkeydown="if(event.key==='Enter')applyOverride(${di},'${type}',this.value)">
+    </div>
+    <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px">Pinned to this slot — won't be added to the database.</p>`;
+  document.getElementById("action-footer").innerHTML=`
+    <button class="btn btn-outline" onclick="openModal(${di},'${type}')">Back</button>
+    <button class="btn btn-primary" onclick="applyOverride(${di},'${type}',document.getElementById('ov-input').value)">Apply</button>`;
+  setTimeout(()=>document.getElementById("ov-input")?.focus(),50);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ADD NEW MEAL
+// ═══════════════════════════════════════════════════════════════════
+
+function addIngRow() {
+  const row=document.createElement("div"); row.className="ingredient-row";
+  row.innerHTML=`<input class="form-input" placeholder="Ingredient name" data-ing="name">
+    <input class="form-input qty" placeholder="Qty" data-ing="qty">
+    <input class="form-input qty" placeholder="$" type="number" step="0.01" data-ing="cost">
+    <button class="rm-ing" onclick="rmIngRow(this)">×</button>`;
+  document.getElementById("new-ingredient-list").appendChild(row);
+}
+function rmIngRow(btn) { const l=document.getElementById("new-ingredient-list"); if(l.children.length>1) btn.closest(".ingredient-row").remove(); }
+
+function submitNewMeal() {
+  const name=document.getElementById("new-name").value.trim();
+  const fb=document.getElementById("add-meal-feedback");
+  if(!name){ fb.innerHTML='<span style="color:var(--red)">Please enter a meal name.</span>'; return; }
+  const type=document.getElementById("new-type").value;
+  const kid=Math.min(5,Math.max(1,parseInt(document.getElementById("new-kid").value)||3));
+  const prep=parseInt(document.getElementById("new-prep").value)||0;
+  const cook=parseInt(document.getElementById("new-cook").value)||0;
+  const link=document.getElementById("new-recipe-link").value.trim()||null;
+  const tags=document.getElementById("new-tags").value.trim().split(",").map(t=>t.trim()).filter(Boolean);
+  const ings=[]; let cost=0;
+  document.querySelectorAll("#new-ingredient-list .ingredient-row").forEach(row=>{
+    const n=row.querySelector("[data-ing='name']").value.trim();
+    const q=row.querySelector("[data-ing='qty']").value.trim();
+    const c=parseFloat(row.querySelector("[data-ing='cost']").value)||0;
+    if(n){ ings.push({name:n,quantity:q||null,estimatedCost:c}); cost+=c; }
+  });
+  const m={id:`custom_${Date.now()}`,name,mealType:type,kidApprovalScore:kid,prepTime:prep,cookTime:cook,totalTime:prep+cook,totalCostEstimate:Math.round(cost*100)/100,tags,recipeLink:link,thumbedDown:false,lastServed:null,ingredients:ings};
+  MEALS.push(m); ML=buildLookup();
+  fb.innerHTML=`<span style="color:var(--green)">✓ "${name}" added!</span>`;
+  clearMealForm(); setTimeout(()=>fb.innerHTML="",3000);
+}
+
+function clearMealForm() {
+  ["new-name","new-recipe-link","new-tags"].forEach(id=>document.getElementById(id).value="");
+  document.getElementById("new-type").value="dinner";
+  document.getElementById("new-kid").value="3";
+  document.getElementById("new-prep").value="10";
+  document.getElementById("new-cook").value="20";
+  document.getElementById("new-ingredient-list").innerHTML=`<div class="ingredient-row">
+    <input class="form-input" placeholder="Ingredient name" data-ing="name">
+    <input class="form-input qty" placeholder="Qty" data-ing="qty">
+    <input class="form-input qty" placeholder="$" type="number" step="0.01" data-ing="cost">
+    <button class="rm-ing" onclick="rmIngRow(this)">×</button></div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MODAL
+// ═══════════════════════════════════════════════════════════════════
+
+function closeModal(id,e) {
+  if(e&&e.target!==document.getElementById(id)) return;
+  document.getElementById(id).classList.remove("open"); window._swapSel=null;
+}
+document.addEventListener("keydown",e=>{ if(e.key==="Escape") document.querySelectorAll(".modal-backdrop.open").forEach(m=>m.classList.remove("open")); });
+
+// ═══════════════════════════════════════════════════════════════════
+// CONFIRM WEEK
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Opens the confirmation modal with a summary of what will be locked.
+ * Shows each day's dinner (the most review-worthy slot) and the total cost.
+ */
+function confirmWeek() {
+  if (!currentPlan) return;
+
+  // Check if this week is already confirmed
+  const alreadyConfirmed = confirmedWeeks.some(w => w.weekId === currentPlan.id);
+  if (alreadyConfirmed) {
+    alert("This week is already confirmed.");
+    return;
+  }
+
+  document.getElementById("confirm-modal-subtitle").textContent =
+    `${fmtDate(currentPlan.weekStartDate)} – ${fmtDate(currentPlan.weekEndDate)} · Est. $${currentPlan.projectedWeeklyTotal}`;
+
+  // Build a quick summary — dinners only to keep it scannable
+  const rows = currentPlan.days.map(day => {
+    const mid = resolveSlot(day, "dinner");
+    const name = resolveMealName(day, "dinner", mid);
+    return `<div style="display:flex; gap:12px; padding:8px 0; border-bottom:1px solid var(--rule); align-items:baseline;">
+      <span style="font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-soft); width:80px; flex-shrink:0;">${day.dayOfWeek.slice(0,3)}</span>
+      <span style="font-size:13px;">${name}</span>
+    </div>`;
+  }).join("");
+
+  document.getElementById("confirm-modal-body").innerHTML = `
+    <p style="font-size:13px; color:var(--ink-soft); margin-bottom:16px;">
+      Confirming will lock this week's meals into your history and update when each meal was last served.
+      You can still edit individual days after confirming.
+    </p>
+    <p style="font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-soft); margin-bottom:8px;">Dinners this week</p>
+    ${rows}
+    <p style="font-size:12px; color:var(--ink-soft); margin-top:14px;">
+      All 21 meal slots will be recorded, including breakfasts and lunches.
+    </p>`;
+
+  document.getElementById("modal-confirm").classList.add("open");
+}
+
+/**
+ * Resolves a display name for any slot type, handling all special values.
+ */
+function resolveMealName(day, type, mid) {
+  if (!mid)              return "—";
+  if (mid === NA)        return "Eating out";
+  if (mid === LEFTOVER)  return day._leftoverSource ? `↩ ${day._leftoverSource}` : "↩ Leftovers";
+  const fb = FB_LOOKUP[mid];
+  if (fb)                return `⚡ ${fb.name}`;
+  if (day.overrides && day.overrides[type]) return `✏️ ${day.overrides[type].name}`;
+  return ML[mid]?.name || mid;
+}
+
+/**
+ * Locks the current plan into confirmedWeeks.
+ * Side effects:
+ *   1. Updates lastServed on each meal in MEALS that appeared in the plan.
+ *   2. Saves the confirmed week snapshot to localStorage.
+ *   3. Updates the UI to show the confirmed state.
+ */
+function doConfirmWeek() {
+  if (!currentPlan) return;
+
+  const now = new Date().toISOString().split("T")[0];
+
+  // 1. Update lastServed on database meals
+  const servedIds = new Set();
+  for (const day of currentPlan.days) {
+    for (const type of TYPES) {
+      const mid = resolveSlot(day, type);
+      if (mid && mid !== NA && mid !== LEFTOVER && !FB_LOOKUP[mid]) {
+        servedIds.add(mid);
+      }
+    }
+  }
+  MEALS.forEach(m => {
+    if (servedIds.has(m.id)) m.lastServed = now;
+  });
+  ML = buildLookup();
+
+  // 2. Build and store the confirmed week snapshot
+  const snapshot = {
+    weekId:        currentPlan.id,
+    weekStartDate: currentPlan.weekStartDate,
+    weekEndDate:   currentPlan.weekEndDate,
+    confirmedAt:   now,
+    totalCost:     currentPlan.projectedWeeklyTotal,
+    newMeals:      currentPlan.newMealsThisWeek || [],
+    days: currentPlan.days.map(day => ({
+      date:       day.date,
+      dayOfWeek:  day.dayOfWeek,
+      pace:       day.pace,
+      isChaosDay: day.isChaosDay || false,
+      meals: {
+        breakfast: { id: resolveSlot(day,"breakfast"), name: resolveMealName(day,"breakfast",resolveSlot(day,"breakfast")) },
+        lunch:     { id: resolveSlot(day,"lunch"),     name: resolveMealName(day,"lunch",    resolveSlot(day,"lunch"))     },
+        dinner:    { id: resolveSlot(day,"dinner"),    name: resolveMealName(day,"dinner",   resolveSlot(day,"dinner"))    },
+      },
+    })),
+  };
+
+  // Prepend so history shows newest first
+  confirmedWeeks.unshift(snapshot);
+  saveConfirmedWeeks();
+
+  // 3. Update UI
+  closeModal("modal-confirm");
+  document.getElementById("confirm-bar").style.display = "none";
+
+  // Show confirmed badge in summary bar
+  const summaryBar = document.getElementById("summary-bar");
+  const badge = document.createElement("div");
+  badge.className = "stat-pill";
+  badge.innerHTML = `<span class="confirmed-badge">✓ Confirmed ${now}</span>`;
+  summaryBar.appendChild(badge);
+
+  renderHistory();
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// HISTORY RENDER
+// ═══════════════════════════════════════════════════════════════════
+
+function renderHistory() {
+  const count = confirmedWeeks.length;
+  document.getElementById("history-week-count").textContent = count;
+  const el = document.getElementById("history-content");
+
+  if (count === 0) {
+    el.innerHTML = `<div class="history-empty">
+      <div class="icon">📅</div>
+      <h3>No confirmed weeks yet</h3>
+      <p>Generate a plan, make any adjustments, then hit "Confirm Week" to log it here.</p>
+    </div>`;
+    return;
+  }
+
+  el.innerHTML = confirmedWeeks.map((week, wi) => {
+    const PACE_ICON = { busy:"🟡", relaxed:"🟢", chaos:"🔴", normal:"" };
+
+    const dayRows = week.days.map(day => {
+      const cells = TYPES.map(type => {
+        const slot = day.meals[type];
+        const name = slot?.name || "—";
+        const cls  = !slot?.id          ? ""
+                   : slot.id === NA     ? "is-na"
+                   : slot.id === LEFTOVER ? "is-leftover"
+                   : FB_LOOKUP[slot.id] ? "is-fallback"
+                   : day.isChaosDay     ? "is-chaos"
+                   : "";
+        return `<div class="history-meal-cell">
+          <div class="history-meal-type">${type}</div>
+          <div class="history-meal-name ${cls}">${name}</div>
+        </div>`;
+      }).join("");
+
+      const paceIcon = PACE_ICON[day.pace] || "";
+      return `<div class="history-day-row">
+        <div class="history-day-name">${paceIcon} ${day.dayOfWeek.slice(0,3)}</div>
+        <div class="history-meals">${cells}</div>
+      </div>`;
+    }).join("");
+
+    const newMealList = week.newMeals.length
+      ? week.newMeals.map(m => m.name).join(", ")
+      : "None";
+
+    return `<div class="history-card" id="hcard-${wi}">
+      <div class="history-card-header" onclick="toggleHistoryCard(${wi})">
+        <div class="history-week-label">Week of ${fmtDate(week.weekStartDate)}</div>
+        <div class="history-meta">Confirmed ${week.confirmedAt} · $${week.totalCost}</div>
+        <span class="history-chevron">▾</span>
+      </div>
+      <div class="history-card-body">
+        ${dayRows}
+        <div class="history-stats-row">
+          <span class="history-stat">💰 <strong>$${week.totalCost}</strong> estimated</span>
+          <span class="history-stat">✨ New meals: <strong>${newMealList}</strong></span>
+          <span class="history-stat">📅 <strong>${week.weekStartDate}</strong> → <strong>${week.weekEndDate}</strong></span>
+          <button class="btn btn-ghost" style="margin-left:auto;font-size:11px" onclick="deleteConfirmedWeek('${week.weekId}')">Delete record</button>
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function toggleHistoryCard(wi) {
+  document.getElementById("hcard-" + wi)?.classList.toggle("open");
+}
+
+function deleteConfirmedWeek(weekId) {
+  if (!confirm("Remove this week from your history?")) return;
+  confirmedWeeks = confirmedWeeks.filter(w => w.weekId !== weekId);
+  saveConfirmedWeeks();
+  renderHistory();
+}
+
+// ── Init ──────────────────────────────────────────────────────────
+renderScheduleRow();
+renderHistory();
+</script>
+</body>
+</html>

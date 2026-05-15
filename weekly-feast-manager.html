@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weekly Feast — Database Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --cream:#F7F3EE; --paper:#FFFDF9; --ink:#1C1917; --ink-soft:#57534E;
+    --rule:#E7E2DB; --amber:#D97706; --amber-lt:#FEF3C7;
+    --green:#15803D; --green-lt:#DCFCE7;
+    --red:#B91C1C;   --red-lt:#FEE2E2;
+    --blue:#1D4ED8;  --blue-lt:#DBEAFE;
+    --shadow:0 1px 3px rgba(28,25,23,.08),0 4px 16px rgba(28,25,23,.06);
+    --radius:10px; --serif:'Playfair Display',Georgia,serif;
+    --sans:'DM Sans',system-ui,sans-serif; --t:180ms ease;
+  }
+  body { font-family:var(--sans); background:var(--cream); color:var(--ink); min-height:100vh; font-size:14px; line-height:1.5; }
+  .app { max-width:1200px; margin:0 auto; padding:0 24px 80px; }
+
+  header { display:flex; align-items:baseline; justify-content:space-between; padding:36px 0 28px; border-bottom:1.5px solid var(--ink); margin-bottom:32px; gap:16px; flex-wrap:wrap; }
+  .brand h1 { font-family:var(--serif); font-size:clamp(22px,3vw,32px); font-weight:700; letter-spacing:-.5px; }
+  .brand p  { font-size:12px; color:var(--ink-soft); margin-top:2px; }
+  .header-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:8px 16px; border-radius:var(--radius); border:1.5px solid transparent; font-family:var(--sans); font-size:13px; font-weight:500; cursor:pointer; transition:all var(--t); white-space:nowrap; }
+  .btn-primary { background:var(--ink); color:var(--cream); border-color:var(--ink); }
+  .btn-primary:hover { background:#3C3833; }
+  .btn-outline { background:transparent; color:var(--ink); border-color:var(--rule); }
+  .btn-outline:hover { border-color:var(--ink-soft); background:var(--paper); }
+  .btn-ghost  { background:transparent; color:var(--ink-soft); border-color:transparent; padding:6px 10px; font-size:12px; }
+  .btn-ghost:hover  { color:var(--ink); background:var(--rule); }
+  .btn-danger { background:var(--red-lt); color:var(--red); border-color:#FECACA; font-size:12px; padding:5px 10px; }
+  .btn-danger:hover { background:#FEE2E2; }
+  .btn-sm { padding:5px 10px; font-size:12px; }
+  .btn[disabled] { opacity:.4; pointer-events:none; }
+
+  /* Tabs */
+  .tabs { display:flex; gap:2px; margin-bottom:28px; background:var(--rule); padding:3px; border-radius:12px; width:fit-content; }
+  .tab { padding:7px 20px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; border:none; background:transparent; color:var(--ink-soft); font-family:var(--sans); transition:all var(--t); }
+  .tab.active { background:var(--paper); color:var(--ink); box-shadow:0 1px 4px rgba(28,25,23,.1); }
+  .panel { display:none; }
+  .panel.active { display:block; }
+
+  /* Toolbar */
+  .toolbar { display:flex; gap:10px; align-items:center; margin-bottom:20px; flex-wrap:wrap; }
+  .search-input { padding:8px 12px; border:1.5px solid var(--rule); border-radius:8px; font-family:var(--sans); font-size:13px; background:var(--paper); color:var(--ink); min-width:220px; }
+  .search-input:focus { outline:none; border-color:var(--amber); }
+  .filter-select { padding:8px 10px; border:1.5px solid var(--rule); border-radius:8px; font-family:var(--sans); font-size:13px; background:var(--paper); color:var(--ink); cursor:pointer; }
+  .filter-select:focus { outline:none; border-color:var(--amber); }
+  .toolbar-right { margin-left:auto; display:flex; gap:8px; }
+
+  /* Import/export bar */
+  .io-bar { display:flex; gap:10px; align-items:center; padding:12px 16px; background:var(--paper); border:1px solid var(--rule); border-radius:var(--radius); margin-bottom:20px; font-size:13px; flex-wrap:wrap; }
+  .io-bar label { color:var(--ink-soft); }
+  .io-bar strong { color:var(--ink); }
+
+  /* Meal table */
+  .meal-table-wrap { overflow-x:auto; border-radius:var(--radius); border:1px solid var(--rule); box-shadow:var(--shadow); }
+  table { width:100%; border-collapse:collapse; background:var(--paper); font-size:13px; }
+  thead tr { background:var(--cream); border-bottom:1.5px solid var(--rule); }
+  th { padding:10px 14px; text-align:left; font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-soft); white-space:nowrap; }
+  td { padding:10px 14px; border-bottom:1px solid var(--rule); vertical-align:middle; }
+  tr:last-child td { border-bottom:none; }
+  tr:hover td { background:#FAFAF8; }
+
+  .td-name { font-weight:500; max-width:180px; }
+  .td-tags { display:flex; gap:4px; flex-wrap:wrap; }
+  .tag-chip { background:var(--cream); border:1px solid var(--rule); border-radius:20px; padding:1px 7px; font-size:10px; color:var(--ink-soft); white-space:nowrap; }
+  .tag-chip.cuisine { background:var(--blue-lt); border-color:#BFDBFE; color:var(--blue); }
+  .tag-chip.new     { background:var(--green-lt); border-color:#BBF7D0; color:var(--green); }
+
+  .stars { color:var(--amber); font-size:12px; letter-spacing:1px; }
+  .recipe-link { color:var(--amber); text-decoration:none; font-size:12px; }
+  .recipe-link:hover { text-decoration:underline; }
+  .no-recipe { color:var(--ink-soft); font-size:11px; opacity:.6; }
+
+  .thumbed-badge { display:inline-flex; align-items:center; padding:2px 7px; border-radius:20px; font-size:10px; font-weight:500; background:var(--red-lt); color:var(--red); border:1px solid #FECACA; }
+  .actions-cell { display:flex; gap:6px; align-items:center; white-space:nowrap; }
+
+  /* Edit form panel */
+  .edit-panel { background:var(--paper); border:1.5px solid var(--amber); border-radius:var(--radius); padding:24px; margin-bottom:24px; box-shadow:var(--shadow); }
+  .edit-panel-title { font-family:var(--serif); font-size:18px; font-weight:700; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center; }
+  .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .form-grid.three { grid-template-columns:1fr 1fr 1fr; }
+  .form-group { display:flex; flex-direction:column; gap:5px; }
+  .form-group.full { grid-column:1/-1; }
+  .form-label { font-size:11px; font-weight:600; color:var(--ink-soft); letter-spacing:.04em; text-transform:uppercase; }
+  .form-input { padding:9px 12px; border:1.5px solid var(--rule); border-radius:8px; font-family:var(--sans); font-size:13px; color:var(--ink); background:var(--cream); transition:border-color var(--t); }
+  .form-input:focus { outline:none; border-color:var(--amber); background:var(--paper); }
+  .form-hint { font-size:11px; color:var(--ink-soft); margin-top:2px; }
+
+  /* Ingredient editor */
+  .ingredient-section { margin-top:16px; }
+  .ingredient-section-title { font-size:11px; font-weight:600; color:var(--ink-soft); letter-spacing:.04em; text-transform:uppercase; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid var(--rule); }
+  .ingredient-rows { display:flex; flex-direction:column; gap:6px; margin-bottom:10px; }
+  .ingredient-row { display:flex; gap:8px; align-items:center; }
+  .ingredient-row .form-input { flex:1; }
+  .ingredient-row .form-input.sm { width:80px; flex:0 0 80px; }
+  .rm-btn { background:none; border:none; color:var(--ink-soft); cursor:pointer; font-size:18px; padding:0 4px; line-height:1; flex-shrink:0; }
+  .rm-btn:hover { color:var(--red); }
+
+  .edit-actions { display:flex; gap:10px; margin-top:20px; padding-top:16px; border-top:1px solid var(--rule); }
+
+  /* Recipe description box */
+  .recipe-desc-box { background:var(--amber-lt); border:1px solid #FDE68A; border-radius:8px; padding:12px 14px; margin-top:8px; font-size:13px; line-height:1.6; }
+  .recipe-desc-box h4 { font-family:var(--serif); font-size:15px; margin-bottom:6px; }
+
+  /* Feedback tab */
+  .feedback-list { display:flex; flex-direction:column; gap:12px; }
+  .feedback-card { background:var(--paper); border:1px solid var(--rule); border-radius:var(--radius); padding:16px; box-shadow:var(--shadow); }
+  .feedback-card-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; gap:12px; flex-wrap:wrap; }
+  .feedback-meal-name { font-weight:600; font-size:14px; }
+  .feedback-meta { font-size:11px; color:var(--ink-soft); margin-top:2px; }
+  .feedback-tier { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:500; }
+  .tier-everyone { background:var(--green-lt); color:var(--green); }
+  .tier-some     { background:var(--amber-lt);  color:var(--amber); }
+  .tier-noone    { background:var(--red-lt);    color:var(--red); }
+  .verdict-chip  { display:inline-flex; align-items:center; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:500; background:var(--cream); border:1px solid var(--rule); color:var(--ink-soft); }
+  .feedback-notes { font-size:12px; color:var(--ink-soft); font-style:italic; margin-top:8px; }
+  .no-feedback { text-align:center; padding:40px; color:var(--ink-soft); font-size:13px; }
+
+  /* Exclusions tab */
+  .excl-list { display:flex; flex-direction:column; gap:8px; }
+  .excl-row { display:flex; align-items:center; gap:12px; padding:12px 16px; background:var(--paper); border:1px solid #FECACA; border-radius:var(--radius); }
+  .excl-name { flex:1; font-weight:500; font-size:13px; }
+  .excl-reason { font-size:12px; color:var(--ink-soft); }
+  .no-excl { text-align:center; padding:40px; color:var(--ink-soft); font-size:13px; }
+
+  /* Toasts */
+  .toast-container { position:fixed; bottom:24px; right:24px; display:flex; flex-direction:column; gap:8px; z-index:999; }
+  .toast { background:var(--ink); color:var(--cream); padding:10px 16px; border-radius:8px; font-size:13px; box-shadow:0 4px 20px rgba(0,0,0,.2); animation:slideIn .2s ease; max-width:300px; }
+  .toast.success { background:var(--green); }
+  .toast.error   { background:var(--red); }
+  @keyframes slideIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+  /* Modal */
+  .modal-backdrop { position:fixed; inset:0; background:rgba(28,25,23,.35); backdrop-filter:blur(2px); z-index:100; display:flex; align-items:center; justify-content:center; padding:20px; opacity:0; pointer-events:none; transition:opacity var(--t); }
+  .modal-backdrop.open { opacity:1; pointer-events:all; }
+  .modal { background:var(--paper); border-radius:14px; width:100%; max-width:500px; box-shadow:0 20px 60px rgba(28,25,23,.2); overflow:hidden; transform:translateY(12px) scale(.98); transition:transform var(--t); max-height:88vh; display:flex; flex-direction:column; }
+  .modal-backdrop.open .modal { transform:translateY(0) scale(1); }
+  .modal-header { padding:20px 24px 16px; border-bottom:1px solid var(--rule); display:flex; justify-content:space-between; align-items:flex-start; flex-shrink:0; }
+  .modal-title { font-family:var(--serif); font-size:18px; font-weight:700; }
+  .modal-subtitle { font-size:12px; color:var(--ink-soft); margin-top:2px; }
+  .modal-close { background:none; border:none; cursor:pointer; color:var(--ink-soft); font-size:18px; }
+  .modal-close:hover { color:var(--ink); }
+  .modal-body { padding:20px 24px; overflow-y:auto; flex:1; }
+  .modal-footer { padding:0 24px 20px; display:flex; gap:8px; justify-content:flex-end; flex-shrink:0; }
+
+  ::-webkit-scrollbar { width:5px; }
+  ::-webkit-scrollbar-thumb { background:var(--rule); border-radius:99px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="brand">
+      <h1>Weekly Feast — Manager</h1>
+      <p>Edit meals, review feedback, and manage exclusions</p>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-outline" onclick="exportCSV()">⬇ Export CSV</button>
+      <label class="btn btn-outline" style="cursor:pointer">
+        ⬆ Import CSV
+        <input type="file" accept=".csv" style="display:none" onchange="importCSV(this)">
+      </label>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" id="tab-meals"     onclick="switchTab('meals')">Meal Database</button>
+    <button class="tab"        id="tab-feedback"  onclick="switchTab('feedback')">Feedback</button>
+    <button class="tab"        id="tab-exclusions"onclick="switchTab('exclusions')">Exclusions</button>
+  </div>
+
+  <!-- ── MEALS ── -->
+  <div class="panel active" id="panel-meals">
+
+    <div class="io-bar">
+      <span>📋 <strong id="meal-count">0</strong> meals in database</span>
+      <span style="color:var(--rule)">|</span>
+      <span style="color:var(--ink-soft)">Edit inline below, or export to CSV to edit in Excel/Sheets, then re-import.</span>
+      <div class="toolbar-right">
+        <button class="btn btn-primary btn-sm" onclick="startNewMeal()">+ Add Meal</button>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <input class="search-input" id="meal-search" placeholder="Search meals…" oninput="renderMealTable()">
+      <select class="filter-select" id="filter-type" onchange="renderMealTable()">
+        <option value="">All types</option>
+        <option value="breakfast">Breakfast</option>
+        <option value="lunch">Lunch</option>
+        <option value="dinner">Dinner</option>
+      </select>
+      <select class="filter-select" id="filter-kid" onchange="renderMealTable()">
+        <option value="">Any kid score</option>
+        <option value="5">★★★★★ only</option>
+        <option value="4">★★★★ and up</option>
+        <option value="3">★★★ and up</option>
+      </select>
+    </div>
+
+    <!-- Inline edit panel (hidden until edit/add clicked) -->
+    <div class="edit-panel" id="edit-panel" style="display:none">
+      <div class="edit-panel-title">
+        <span id="edit-panel-title-text">Edit Meal</span>
+        <button class="btn btn-ghost" onclick="closeEditPanel()">✕ Cancel</button>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Meal Name *</label>
+          <input class="form-input" id="edit-name" placeholder="e.g. Sheet Pan Tacos">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Meal Type *</label>
+          <select class="form-input" id="edit-type">
+            <option value="dinner">Dinner</option>
+            <option value="breakfast">Breakfast</option>
+            <option value="lunch">Lunch</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-grid three" style="margin-top:12px">
+        <div class="form-group">
+          <label class="form-label">Kid Approval (1–5)</label>
+          <input class="form-input" id="edit-kid" type="number" min="1" max="5" value="3">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Prep Time (min)</label>
+          <input class="form-input" id="edit-prep" type="number" min="0" value="10">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cook Time (min)</label>
+          <input class="form-input" id="edit-cook" type="number" min="0" value="20">
+        </div>
+      </div>
+
+      <div class="form-grid" style="margin-top:12px">
+        <div class="form-group">
+          <label class="form-label">Est. Total Cost ($)</label>
+          <input class="form-input" id="edit-cost" type="number" min="0" step="0.5" value="0">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Tags (comma-separated)</label>
+          <input class="form-input" id="edit-tags" placeholder="italian, kid-friendly, quick">
+        </div>
+      </div>
+
+      <div class="form-group full" style="margin-top:12px">
+        <label class="form-label">Recipe Link (URL)</label>
+        <input class="form-input" id="edit-recipe-link" type="url" placeholder="https://...">
+        <span class="form-hint">Add a URL to an online recipe. Or use the description field below for your own notes.</span>
+      </div>
+
+      <div class="form-group full" style="margin-top:12px">
+        <label class="form-label">Recipe Description / Notes</label>
+        <textarea class="form-input" id="edit-recipe-desc" rows="4"
+          placeholder="Paste the recipe here, or write your own notes — e.g. 'Cook chicken at 400°F for 30 min. Kids prefer the sauce on the side.'&#10;This is shown in the app when viewing the meal."></textarea>
+        <span class="form-hint">This is shown inline in the app. Use it for your own recipe, substitutions, or family notes.</span>
+      </div>
+
+      <div class="ingredient-section">
+        <div class="ingredient-section-title">Ingredients</div>
+        <div class="ingredient-rows" id="edit-ingredient-rows"></div>
+        <button class="btn btn-ghost btn-sm" onclick="addIngRow()">+ Add ingredient</button>
+      </div>
+
+      <div class="edit-actions">
+        <button class="btn btn-primary" onclick="saveMeal()">Save Meal</button>
+        <button class="btn btn-outline" onclick="closeEditPanel()">Cancel</button>
+        <button class="btn btn-danger" id="edit-delete-btn" onclick="deleteMeal()" style="margin-left:auto">Delete Meal</button>
+      </div>
+    </div>
+
+    <div class="meal-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Kid Score</th>
+            <th>Time</th>
+            <th>Cost</th>
+            <th>Tags</th>
+            <th>Recipe</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="meal-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── FEEDBACK ── -->
+  <div class="panel" id="panel-feedback">
+    <div class="io-bar" style="margin-bottom:20px">
+      <span>📊 <strong id="feedback-count">0</strong> feedback entries</span>
+      <span style="color:var(--rule)">|</span>
+      <span style="color:var(--ink-soft)">Log how meals went after serving them. This improves future plans.</span>
+      <div class="toolbar-right">
+        <button class="btn btn-primary btn-sm" onclick="openLogFeedback()">+ Log Feedback</button>
+      </div>
+    </div>
+
+    <div class="toolbar" style="margin-bottom:16px">
+      <input class="search-input" id="fb-search" placeholder="Search by meal name…" oninput="renderFeedback()">
+      <select class="filter-select" id="fb-tier" onchange="renderFeedback()">
+        <option value="">All reactions</option>
+        <option value="everyone_liked_it">Everyone liked it</option>
+        <option value="some_liked_it">Some liked it</option>
+        <option value="no_one_liked_it">No one liked it</option>
+      </select>
+    </div>
+
+    <div class="feedback-list" id="feedback-list"></div>
+  </div>
+
+  <!-- ── EXCLUSIONS ── -->
+  <div class="panel" id="panel-exclusions">
+    <div class="io-bar" style="margin-bottom:20px">
+      <span>🚫 <strong id="excl-count">0</strong> excluded meals</span>
+      <span style="color:var(--rule)">|</span>
+      <span style="color:var(--ink-soft)">Thumbed-down meals are permanently excluded from plan generation.</span>
+      <div class="toolbar-right">
+        <button class="btn btn-danger btn-sm" onclick="clearAllExclusions()">Clear All</button>
+      </div>
+    </div>
+    <div class="excl-list" id="excl-list"></div>
+  </div>
+
+</div><!-- /app -->
+
+<!-- Toast container -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- Log Feedback Modal -->
+<div class="modal-backdrop" id="modal-feedback" onclick="closeModal('modal-feedback', event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Log Meal Feedback</div>
+        <div class="modal-subtitle">Record how the family reacted to a meal</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-feedback')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group" style="margin-bottom:14px">
+        <label class="form-label">Meal *</label>
+        <select class="form-input" id="fb-meal-select"></select>
+      </div>
+      <div class="form-group" style="margin-bottom:14px">
+        <label class="form-label">Reaction *</label>
+        <select class="form-input" id="fb-tier-select">
+          <option value="everyone_liked_it">😄 Everyone liked it</option>
+          <option value="some_liked_it">😐 Some liked it</option>
+          <option value="no_one_liked_it">😞 No one liked it</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:14px">
+        <label class="form-label">Date served</label>
+        <input class="form-input" id="fb-date" type="date">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes (optional)</label>
+        <textarea class="form-input" id="fb-notes" rows="3" placeholder="e.g. Caleb asked for seconds, Theo picked out the onions…"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-feedback')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveFeedback()">Save Feedback</button>
+    </div>
+  </div>
+</div>
+
+<!-- Recipe Detail Modal -->
+<div class="modal-backdrop" id="modal-recipe" onclick="closeModal('modal-recipe', event)">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="recipe-modal-title"></div>
+        <div class="modal-subtitle" id="recipe-modal-subtitle"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-recipe')">✕</button>
+    </div>
+    <div class="modal-body" id="recipe-modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-recipe')">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// DATA — mirrors weekly-feast.html, loaded from sessionStorage if available
+// ═══════════════════════════════════════════════════════════════════
+
+const CUISINE_TAGS = new Set(["italian","mexican","asian","american","mediterranean","indian","thai","japanese","korean","french","greek"]);
+
+let MEALS = JSON.parse(sessionStorage.getItem("wf_meals") || "null") || [
+  {id:"b1",name:"Scrambled Eggs & Toast",    mealType:"breakfast",kidApprovalScore:4,prepTime:5, cookTime:10,totalTime:15,totalCostEstimate:6, tags:["easy","quick"],             recipeLink:null,recipeDesc:"",thumbedDown:false,ingredients:[{name:"eggs",quantity:"8",estimatedCost:2},{name:"bread",quantity:"4 slices",estimatedCost:1},{name:"butter",quantity:"2 tbsp",estimatedCost:.5},{name:"milk",quantity:"1/4 cup",estimatedCost:.3}]},
+  {id:"b2",name:"Pancakes",                  mealType:"breakfast",kidApprovalScore:5,prepTime:10,cookTime:20,totalTime:30,totalCostEstimate:8, tags:["kid-friendly","weekend"],    recipeLink:"https://www.allrecipes.com/recipe/21014/good-old-fashioned-pancakes/",recipeDesc:"",thumbedDown:false,ingredients:[{name:"flour",quantity:"2 cups",estimatedCost:1},{name:"eggs",quantity:"2",estimatedCost:.5},{name:"milk",quantity:"1 cup",estimatedCost:.5},{name:"maple syrup",quantity:"1/4 cup",estimatedCost:1},{name:"butter",quantity:"2 tbsp",estimatedCost:.5}]},
+  {id:"b3",name:"Yogurt & Fruit Parfait",    mealType:"breakfast",kidApprovalScore:4,prepTime:5, cookTime:0, totalTime:5, totalCostEstimate:7, tags:["no-cook","quick"],           recipeLink:null,recipeDesc:"",thumbedDown:false,ingredients:[{name:"yogurt",quantity:"2 cups",estimatedCost:3},{name:"strawberry",quantity:"1 cup",estimatedCost:2},{name:"blueberry",quantity:"1/2 cup",estimatedCost:2},{name:"honey",quantity:"2 tbsp",estimatedCost:.5}]},
+  {id:"b4",name:"Avocado Toast",             mealType:"breakfast",kidApprovalScore:3,prepTime:5, cookTime:5, totalTime:10,totalCostEstimate:9, tags:["quick"],                    recipeLink:null,recipeDesc:"",thumbedDown:false,ingredients:[{name:"avocado",quantity:"2",estimatedCost:3},{name:"bread",quantity:"4 slices",estimatedCost:1},{name:"lemon",quantity:"1",estimatedCost:.5},{name:"eggs",quantity:"4",estimatedCost:1}]},
+  {id:"b5",name:"Cereal & Milk",             mealType:"breakfast",kidApprovalScore:4,prepTime:2, cookTime:0, totalTime:2, totalCostEstimate:5, tags:["no-cook","quick"],           recipeLink:null,recipeDesc:"",thumbedDown:false,ingredients:[{name:"cereal",quantity:"1 box",estimatedCost:4},{name:"milk",quantity:"2 cups",estimatedCost:1}]},
+  {id:"l1",name:"Grilled Cheese",            mealType:"lunch",    kidApprovalScore:5,prepTime:5, cookTime:10,totalTime:15,totalCostEstimate:7, tags:["kid-friendly","easy"],       recipeLink:null,recipeDesc:"",thumbedDown:false,ingredients:[{name:"bread",quantity:"8 slices",estimatedCost:1.5},{name:"cheddar cheese",quantity:"1 cup",estimatedCost:2},{name:"butter",quantity:"2 tbsp",estimatedCost:.5},{name:"tomato",quantity:"2",estimatedCost:1}]},
+  {id:"l2",name:"Turkey & Cheese Wraps",     mealType:"lunch",    kidApprovalScore:4,prepTime:10,cookTime:0, totalTime:10,totalCostEstimate:10,tags:["no-cook","quick"],           recipeLink:null,recipeDesc:"",thumbedDown:false,ingredients:[{name:"tortilla",quantity:"5",estimatedCost:2},{name:"turkey",quantity:"1 lb",estimatedCost:5},{name:"cheddar cheese",quantity:"1/2 cup",estimatedCost:1},{name:"lettuce",quantity:"1 cup",estimatedCost:.5},{name:"tomato",quantity:"1",estimatedCost:.5}]},
+  {id:"l3",name:"Mac & Cheese",              mealType:"lunch",    kidApprovalScore:5,prepTime:5, cookTime:15,totalTime:20,totalCostEstimate:6, tags:["kid-friendly"],              recipeLink:null,recipeDesc:"",thumbedDown:false,ingredients:[{name:"pasta",quantity:"1 lb",estimatedCost:1.5},{name:"cheddar cheese",quantity:"2 cups",estimatedCost:4},{name:"milk",quantity:"1/2 cup",estimatedCost:.3},{name:"butter",quantity:"2 tbsp",estimatedCost:.5}]},
+  {id:"l4",name:"Veggie Quesadillas",        mealType:"lunch",    kidApprovalScore:4,prepTime:10,cookTime:10,totalTime:20,totalCostEstimate:9, tags:["vegetarian"],                recipeLink:null,recipeDesc:"",thumbedDown:false,ingredients:[{name:"tortilla",quantity:"8",estimatedCost:2},{name:"mozzarella cheese",quantity:"1 cup",estimatedCost:2},{name:"pepper",quantity:"2",estimatedCost:1},{name:"corn",quantity:"1 cup",estimatedCost:1},{name:"salsa",quantity:"1 jar",estimatedCost:3}]},
+  {id:"l5",name:"PB&J Sandwiches",           mealType:"lunch",    kidApprovalScore:5,prepTime:5, cookTime:0, totalTime:5, totalCostEstimate:5, tags:["no-cook","kid-friendly"],   recipeLink:null,recipeDesc:"",thumbedDown:false,ingredients:[{name:"bread",quantity:"10 slices",estimatedCost:1.5},{name:"jam",quantity:"4 tbsp",estimatedCost:1},{name:"butter",quantity:"4 tbsp",estimatedCost:.5}]},
+  {id:"d1",name:"Sheet Pan Chicken Tacos",   mealType:"dinner",   kidApprovalScore:4,prepTime:15,cookTime:30,totalTime:45,totalCostEstimate:17,tags:["mexican","kid-friendly"],   recipeLink:"https://www.foodnetwork.com/recipes/sheet-pan-chicken-tacos",recipeDesc:"",thumbedDown:false,ingredients:[{name:"chicken thighs",quantity:"2 lbs",estimatedCost:7},{name:"taco seasoning",quantity:"1 packet",estimatedCost:1},{name:"tortilla",quantity:"12",estimatedCost:3},{name:"shredded cheese",quantity:"1 cup",estimatedCost:2.5},{name:"salsa",quantity:"1 jar",estimatedCost:3}]},
+  {id:"d2",name:"Spaghetti & Meat Sauce",    mealType:"dinner",   kidApprovalScore:5,prepTime:10,cookTime:30,totalTime:40,totalCostEstimate:14,tags:["italian","kid-friendly"],   recipeLink:"https://www.simplyrecipes.com/recipes/spaghetti_meat_sauce/",recipeDesc:"",thumbedDown:false,ingredients:[{name:"pasta",quantity:"1 lb",estimatedCost:1.5},{name:"ground beef",quantity:"1 lb",estimatedCost:6},{name:"tomato sauce",quantity:"2 cups",estimatedCost:2},{name:"garlic",quantity:"4 cloves",estimatedCost:.5},{name:"parmesan cheese",quantity:"1/2 cup",estimatedCost:2}]},
+  {id:"d3",name:"Homemade Pizza",            mealType:"dinner",   kidApprovalScore:5,prepTime:20,cookTime:20,totalTime:40,totalCostEstimate:16,tags:["italian","kid-friendly","weekend"],recipeLink:"https://www.kingarthurbaking.com/recipes/pizza-crust-recipe",recipeDesc:"",thumbedDown:false,ingredients:[{name:"flour",quantity:"3 cups",estimatedCost:1},{name:"tomato sauce",quantity:"1 cup",estimatedCost:1.5},{name:"mozzarella cheese",quantity:"2 cups",estimatedCost:4},{name:"pepperoni",quantity:"1/2 cup",estimatedCost:3},{name:"olive oil",quantity:"2 tbsp",estimatedCost:.5}]},
+  {id:"d4",name:"Lemon Herb Salmon",         mealType:"dinner",   kidApprovalScore:3,prepTime:10,cookTime:20,totalTime:30,totalCostEstimate:22,tags:["healthy","quick"],           recipeLink:"https://www.bonappetit.com/recipe/easy-salmon",recipeDesc:"",thumbedDown:false,ingredients:[{name:"salmon",quantity:"2 lbs",estimatedCost:16},{name:"lemon",quantity:"2",estimatedCost:1},{name:"garlic",quantity:"3 cloves",estimatedCost:.3},{name:"butter",quantity:"3 tbsp",estimatedCost:.7},{name:"asparagus",quantity:"1 lb",estimatedCost:4}]},
+  {id:"d5",name:"Chicken Quesadillas",       mealType:"dinner",   kidApprovalScore:5,prepTime:10,cookTime:15,totalTime:25,totalCostEstimate:13,tags:["kid-friendly","quick","mexican"],recipeLink:null,recipeDesc:"",thumbedDown:false,ingredients:[{name:"chicken breast",quantity:"1.5 lbs",estimatedCost:7},{name:"tortilla",quantity:"8",estimatedCost:2},{name:"cheddar cheese",quantity:"1.5 cups",estimatedCost:3},{name:"sour cream",quantity:"1/2 cup",estimatedCost:1}]},
+  {id:"d6",name:"Beef & Broccoli Stir-Fry", mealType:"dinner",   kidApprovalScore:3,prepTime:15,cookTime:15,totalTime:30,totalCostEstimate:18,tags:["asian"],                    recipeLink:"https://www.recipetineats.com/beef-and-broccoli/",recipeDesc:"",thumbedDown:false,ingredients:[{name:"beef",quantity:"1.5 lbs",estimatedCost:11},{name:"broccoli",quantity:"2 cups",estimatedCost:2},{name:"soy sauce",quantity:"3 tbsp",estimatedCost:.5},{name:"garlic",quantity:"3 cloves",estimatedCost:.3},{name:"rice",quantity:"2 cups",estimatedCost:1}]},
+  {id:"d7",name:"Baked Pasta Bake",          mealType:"dinner",   kidApprovalScore:4,prepTime:20,cookTime:35,totalTime:55,totalCostEstimate:15,tags:["italian","weekend"],         recipeLink:null,recipeDesc:"",thumbedDown:false,ingredients:[{name:"pasta",quantity:"1 lb",estimatedCost:1.5},{name:"ground beef",quantity:"1 lb",estimatedCost:6},{name:"tomato sauce",quantity:"2 cups",estimatedCost:2},{name:"mozzarella cheese",quantity:"2 cups",estimatedCost:4},{name:"parmesan cheese",quantity:"1/2 cup",estimatedCost:2}]},
+  {id:"d8",name:"Korean Beef Bowls",         mealType:"dinner",   kidApprovalScore:3,prepTime:15,cookTime:20,totalTime:35,totalCostEstimate:19,tags:["asian","new"],              recipeLink:"https://www.budgetbytes.com/korean-beef-bowl/",recipeDesc:"",thumbedDown:false,ingredients:[{name:"ground beef",quantity:"1.5 lbs",estimatedCost:9},{name:"rice",quantity:"2 cups",estimatedCost:1},{name:"soy sauce",quantity:"4 tbsp",estimatedCost:.5},{name:"garlic",quantity:"4 cloves",estimatedCost:.4},{name:"ginger",quantity:"1 tsp",estimatedCost:.3},{name:"scallion",quantity:"4",estimatedCost:.5}]},
+];
+
+let FEEDBACK = JSON.parse(sessionStorage.getItem("wf_feedback") || "[]");
+
+function persist() {
+  sessionStorage.setItem("wf_meals", JSON.stringify(MEALS));
+  sessionStorage.setItem("wf_feedback", JSON.stringify(FEEDBACK));
+}
+
+function buildLookup() { return Object.fromEntries(MEALS.map(m=>[m.id,m])); }
+let ML = buildLookup();
+
+// ─── Edit State ───────────────────────────────────────────────────
+let editingId = null; // null = new meal
+
+// ═══════════════════════════════════════════════════════════════════
+// TAB SWITCHING
+// ═══════════════════════════════════════════════════════════════════
+
+function switchTab(t) {
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+  document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));
+  document.getElementById("tab-"+t).classList.add("active");
+  document.getElementById("panel-"+t).classList.add("active");
+  if (t==="meals")      renderMealTable();
+  if (t==="feedback")   renderFeedback();
+  if (t==="exclusions") renderExclusions();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MEAL TABLE
+// ═══════════════════════════════════════════════════════════════════
+
+function renderMealTable() {
+  const search = document.getElementById("meal-search").value.toLowerCase();
+  const type   = document.getElementById("filter-type").value;
+  const minKid = parseInt(document.getElementById("filter-kid").value)||0;
+
+  let meals = MEALS.filter(m => {
+    if (type && m.mealType !== type) return false;
+    if (minKid && (m.kidApprovalScore||0) < minKid) return false;
+    if (search && !m.name.toLowerCase().includes(search) && !(m.tags||[]).join(" ").includes(search)) return false;
+    return true;
+  });
+
+  document.getElementById("meal-count").textContent = MEALS.length;
+
+  const tbody = document.getElementById("meal-tbody");
+  tbody.innerHTML = meals.map(m => {
+    const stars = "★".repeat(m.kidApprovalScore||0) + "☆".repeat(5-(m.kidApprovalScore||0));
+    const tagHtml = (m.tags||[]).map(t =>
+      `<span class="tag-chip ${CUISINE_TAGS.has(t)?'cuisine':t==='new'?'new':''}">${t}</span>`
+    ).join("");
+
+    const recipeHtml = m.recipeLink
+      ? `<a class="recipe-link" href="${m.recipeLink}" target="_blank" rel="noopener">🔗 Link</a>`
+      : `<span class="no-recipe">—</span>`;
+
+    const descBtn = (m.recipeLink || m.recipeDesc)
+      ? `<button class="btn btn-ghost btn-sm" onclick="showRecipe('${m.id}')">📋 View</button>`
+      : "";
+
+    return `<tr>
+      <td class="td-name">${m.name}</td>
+      <td>${m.mealType}</td>
+      <td><span class="stars" title="${m.kidApprovalScore}/5">${stars}</span></td>
+      <td>${m.totalTime||((m.prepTime||0)+(m.cookTime||0))}m</td>
+      <td>$${m.totalCostEstimate||0}</td>
+      <td><div class="td-tags">${tagHtml||'<span class="no-recipe">—</span>'}</div></td>
+      <td>${recipeHtml} ${descBtn}</td>
+      <td>${m.thumbedDown ? '<span class="thumbed-badge">👎 Excluded</span>' : '<span style="color:var(--ink-soft);font-size:12px">Active</span>'}</td>
+      <td><div class="actions-cell">
+        <button class="btn btn-outline btn-sm" onclick="startEdit('${m.id}')">Edit</button>
+        <button class="btn btn-danger" onclick="toggleExclusion('${m.id}')">${m.thumbedDown?'Re-enable':'Exclude'}</button>
+      </div></td>
+    </tr>`;
+  }).join("");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// EDIT PANEL
+// ═══════════════════════════════════════════════════════════════════
+
+function startEdit(id) {
+  editingId = id;
+  const m = ML[id];
+  document.getElementById("edit-panel-title-text").textContent = "Edit: " + m.name;
+  document.getElementById("edit-delete-btn").style.display = "inline-flex";
+
+  document.getElementById("edit-name").value        = m.name;
+  document.getElementById("edit-type").value        = m.mealType;
+  document.getElementById("edit-kid").value         = m.kidApprovalScore||3;
+  document.getElementById("edit-prep").value        = m.prepTime||0;
+  document.getElementById("edit-cook").value        = m.cookTime||0;
+  document.getElementById("edit-cost").value        = m.totalCostEstimate||0;
+  document.getElementById("edit-tags").value        = (m.tags||[]).join(", ");
+  document.getElementById("edit-recipe-link").value = m.recipeLink||"";
+  document.getElementById("edit-recipe-desc").value = m.recipeDesc||"";
+
+  renderIngredientRows(m.ingredients||[]);
+  showEditPanel();
+}
+
+function startNewMeal() {
+  editingId = null;
+  document.getElementById("edit-panel-title-text").textContent = "Add New Meal";
+  document.getElementById("edit-delete-btn").style.display = "none";
+  ["edit-name","edit-recipe-link","edit-recipe-desc","edit-tags"].forEach(id=>document.getElementById(id).value="");
+  document.getElementById("edit-type").value  = "dinner";
+  document.getElementById("edit-kid").value   = "3";
+  document.getElementById("edit-prep").value  = "10";
+  document.getElementById("edit-cook").value  = "20";
+  document.getElementById("edit-cost").value  = "0";
+  renderIngredientRows([]);
+  showEditPanel();
+}
+
+function showEditPanel() {
+  const panel = document.getElementById("edit-panel");
+  panel.style.display = "block";
+  panel.scrollIntoView({ behavior:"smooth", block:"start" });
+}
+
+function closeEditPanel() {
+  document.getElementById("edit-panel").style.display = "none";
+  editingId = null;
+}
+
+function renderIngredientRows(ings) {
+  document.getElementById("edit-ingredient-rows").innerHTML = (ings.length ? ings : [{}]).map((ing,i) => `
+    <div class="ingredient-row">
+      <input class="form-input" placeholder="Ingredient" data-ing="name" value="${ing.name||''}">
+      <input class="form-input sm" placeholder="Qty" data-ing="qty" value="${ing.quantity||''}">
+      <input class="form-input sm" placeholder="$" type="number" step="0.01" data-ing="cost" value="${ing.estimatedCost||''}">
+      <button class="rm-btn" onclick="this.closest('.ingredient-row').remove()">×</button>
+    </div>`).join("");
+}
+
+function addIngRow() {
+  const row = document.createElement("div"); row.className="ingredient-row";
+  row.innerHTML=`<input class="form-input" placeholder="Ingredient" data-ing="name">
+    <input class="form-input sm" placeholder="Qty" data-ing="qty">
+    <input class="form-input sm" placeholder="$" type="number" step="0.01" data-ing="cost">
+    <button class="rm-btn" onclick="this.closest('.ingredient-row').remove()">×</button>`;
+  document.getElementById("edit-ingredient-rows").appendChild(row);
+}
+
+function saveMeal() {
+  const name = document.getElementById("edit-name").value.trim();
+  if (!name) { toast("Please enter a meal name", "error"); return; }
+
+  const prep = parseInt(document.getElementById("edit-prep").value)||0;
+  const cook = parseInt(document.getElementById("edit-cook").value)||0;
+  const tags = document.getElementById("edit-tags").value.split(",").map(t=>t.trim()).filter(Boolean);
+
+  const ings = [];
+  document.querySelectorAll("#edit-ingredient-rows .ingredient-row").forEach(row => {
+    const n = row.querySelector("[data-ing='name']").value.trim();
+    const q = row.querySelector("[data-ing='qty']").value.trim();
+    const c = parseFloat(row.querySelector("[data-ing='cost']").value)||0;
+    if (n) ings.push({ name:n, quantity:q||null, estimatedCost:c });
+  });
+
+  if (editingId) {
+    const idx = MEALS.findIndex(m=>m.id===editingId);
+    MEALS[idx] = { ...MEALS[idx], name,
+      mealType: document.getElementById("edit-type").value,
+      kidApprovalScore: Math.min(5,Math.max(1,parseInt(document.getElementById("edit-kid").value)||3)),
+      prepTime:prep, cookTime:cook, totalTime:prep+cook,
+      totalCostEstimate: parseFloat(document.getElementById("edit-cost").value)||0,
+      tags,
+      recipeLink: document.getElementById("edit-recipe-link").value.trim()||null,
+      recipeDesc: document.getElementById("edit-recipe-desc").value.trim()||"",
+      ingredients: ings,
+    };
+    toast("Meal updated ✓", "success");
+  } else {
+    const newMeal = {
+      id: "custom_"+Date.now(), name,
+      mealType: document.getElementById("edit-type").value,
+      kidApprovalScore: Math.min(5,Math.max(1,parseInt(document.getElementById("edit-kid").value)||3)),
+      prepTime:prep, cookTime:cook, totalTime:prep+cook,
+      totalCostEstimate: parseFloat(document.getElementById("edit-cost").value)||0,
+      tags, recipeLink: document.getElementById("edit-recipe-link").value.trim()||null,
+      recipeDesc: document.getElementById("edit-recipe-desc").value.trim()||"",
+      thumbedDown:false, lastServed:null, ingredients:ings,
+    };
+    MEALS.push(newMeal);
+    toast("Meal added ✓", "success");
+  }
+
+  ML = buildLookup();
+  persist();
+  closeEditPanel();
+  renderMealTable();
+}
+
+function deleteMeal() {
+  if (!editingId) return;
+  if (!confirm("Delete this meal? This can't be undone.")) return;
+  MEALS = MEALS.filter(m=>m.id!==editingId);
+  ML = buildLookup();
+  persist();
+  closeEditPanel();
+  renderMealTable();
+  toast("Meal deleted");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RECIPE MODAL
+// ═══════════════════════════════════════════════════════════════════
+
+function showRecipe(id) {
+  const m = ML[id];
+  if (!m) return;
+  document.getElementById("recipe-modal-title").textContent = m.name;
+  document.getElementById("recipe-modal-subtitle").textContent =
+    `${m.mealType} · ${m.totalTime}min · $${m.totalCostEstimate} · Kid score: ${m.kidApprovalScore}/5`;
+
+  const ingHtml = (m.ingredients||[]).length
+    ? `<ul style="padding-left:18px;margin-top:8px;font-size:13px">${
+        (m.ingredients||[]).map(i=>`<li>${i.name}${i.quantity?` — ${i.quantity}`:''}${i.estimatedCost?` ($${i.estimatedCost})`:''}` ).join("")
+      }</ul>` : "";
+
+  const linkHtml = m.recipeLink
+    ? `<p style="margin-bottom:14px"><a href="${m.recipeLink}" target="_blank" rel="noopener" style="color:var(--amber);font-weight:500">🔗 Open full recipe →</a></p>`
+    : "";
+
+  const descHtml = m.recipeDesc
+    ? `<div class="recipe-desc-box"><h4>Recipe / Notes</h4><p style="white-space:pre-wrap">${m.recipeDesc}</p></div>`
+    : "";
+
+  document.getElementById("recipe-modal-body").innerHTML = `
+    ${linkHtml}
+    ${ingHtml ? `<p style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:4px">Ingredients</p>${ingHtml}` : ""}
+    <div style="margin-top:14px">${descHtml || (!m.recipeLink ? '<p style="color:var(--ink-soft);font-size:13px">No recipe link or notes added yet. Edit this meal to add them.</p>' : "")}</div>`;
+
+  document.getElementById("modal-recipe").classList.add("open");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// EXCLUSIONS
+// ═══════════════════════════════════════════════════════════════════
+
+function toggleExclusion(id) {
+  const m = ML[id];
+  if (!m) return;
+  m.thumbedDown = !m.thumbedDown;
+  persist();
+  renderMealTable();
+  renderExclusions();
+  toast(m.thumbedDown ? `"${m.name}" excluded` : `"${m.name}" re-enabled`, m.thumbedDown ? "error" : "success");
+}
+
+function clearAllExclusions() {
+  if (!confirm("Re-enable all excluded meals?")) return;
+  MEALS.forEach(m => m.thumbedDown = false);
+  persist();
+  renderExclusions();
+  renderMealTable();
+  toast("All exclusions cleared", "success");
+}
+
+function renderExclusions() {
+  const excl = MEALS.filter(m=>m.thumbedDown);
+  document.getElementById("excl-count").textContent = excl.length;
+  const el = document.getElementById("excl-list");
+  if (!excl.length) { el.innerHTML='<div class="no-excl">No meals excluded. Thumbs-down a meal in the Meal Database tab to exclude it from future plans.</div>'; return; }
+  el.innerHTML = excl.map(m => `
+    <div class="excl-row">
+      <div>
+        <div class="excl-name">👎 ${m.name}</div>
+        <div class="excl-reason">${m.mealType} · Kid score: ${m.kidApprovalScore}/5</div>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="toggleExclusion('${m.id}')">Re-enable</button>
+    </div>`).join("");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FEEDBACK
+// ═══════════════════════════════════════════════════════════════════
+
+function openLogFeedback() {
+  const sel = document.getElementById("fb-meal-select");
+  sel.innerHTML = MEALS.map(m=>`<option value="${m.id}">${m.name} (${m.mealType})</option>`).join("");
+  document.getElementById("fb-date").value = new Date().toISOString().split("T")[0];
+  document.getElementById("fb-notes").value = "";
+  document.getElementById("modal-feedback").classList.add("open");
+}
+
+function saveFeedback() {
+  const mealId = document.getElementById("fb-meal-select").value;
+  const tier   = document.getElementById("fb-tier-select").value;
+  const date   = document.getElementById("fb-date").value;
+  const notes  = document.getElementById("fb-notes").value.trim();
+
+  const TIER_SCORES = { everyone_liked_it:5, some_liked_it:3, no_one_liked_it:1 };
+  const TIER_LABELS = { everyone_liked_it:"Everyone liked it", some_liked_it:"Some liked it", no_one_liked_it:"No one liked it" };
+
+  const entry = {
+    id: "fb_"+Date.now(),
+    mealId, planId: null,
+    dateServed: date || new Date().toISOString().split("T")[0],
+    feedbackTier: tier,
+    tierLabel: TIER_LABELS[tier],
+    averageScore: TIER_SCORES[tier],
+    notes,
+    familyVerdict: deriveFamilyVerdict(mealId, [...FEEDBACK, { mealId, feedbackTier:tier, dateServed:date }]),
+  };
+
+  FEEDBACK.push(entry);
+  persist();
+  closeModal("modal-feedback");
+  renderFeedback();
+  toast("Feedback saved ✓", "success");
+}
+
+function deriveFamilyVerdict(mealId, history) {
+  const mealHistory = history.filter(f=>f.mealId===mealId)
+    .sort((a,b)=>new Date(a.dateServed)-new Date(b.dateServed));
+  if (mealHistory.length < 3) return null;
+  const recent = mealHistory.slice(-3).map(f=>f.feedbackTier);
+  if (recent.every(t=>t==="everyone_liked_it"||t==="some_liked_it")) return "keeper";
+  if (recent.every(t=>t==="no_one_liked_it")) return "retire";
+  return "sometimes";
+}
+
+function renderFeedback() {
+  const search = document.getElementById("fb-search").value.toLowerCase();
+  const tier   = document.getElementById("fb-tier").value;
+
+  let entries = [...FEEDBACK].reverse().filter(f => {
+    const meal = ML[f.mealId];
+    if (tier && f.feedbackTier !== tier) return false;
+    if (search && !(meal?.name||"").toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  document.getElementById("feedback-count").textContent = FEEDBACK.length;
+  const el = document.getElementById("feedback-list");
+
+  if (!entries.length) {
+    el.innerHTML = '<div class="no-feedback">No feedback logged yet. Click "+ Log Feedback" after trying a meal.</div>';
+    return;
+  }
+
+  const TIER_CLASS = { everyone_liked_it:"tier-everyone", some_liked_it:"tier-some", no_one_liked_it:"tier-noone" };
+  const TIER_EMOJI = { everyone_liked_it:"😄", some_liked_it:"😐", no_one_liked_it:"😞" };
+
+  el.innerHTML = entries.map(f => {
+    const meal = ML[f.mealId];
+    const verdictHtml = f.familyVerdict
+      ? `<span class="verdict-chip">${{keeper:"🏆 Keeper",retire:"🗑 Retire",sometimes:"🔄 Sometimes"}[f.familyVerdict]||f.familyVerdict}</span>`
+      : "";
+    return `<div class="feedback-card">
+      <div class="feedback-card-header">
+        <div>
+          <div class="feedback-meal-name">${meal?.name||f.mealId}</div>
+          <div class="feedback-meta">${f.dateServed} · ${meal?.mealType||""}</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span class="feedback-tier ${TIER_CLASS[f.feedbackTier]||''}">${TIER_EMOJI[f.feedbackTier]||""} ${f.tierLabel}</span>
+          ${verdictHtml}
+          <button class="btn btn-danger" onclick="deleteFeedback('${f.id}')">Delete</button>
+        </div>
+      </div>
+      ${f.notes ? `<div class="feedback-notes">"${f.notes}"</div>` : ""}
+    </div>`;
+  }).join("");
+}
+
+function deleteFeedback(id) {
+  if (!confirm("Delete this feedback entry?")) return;
+  FEEDBACK = FEEDBACK.filter(f=>f.id!==id);
+  persist();
+  renderFeedback();
+  toast("Feedback deleted");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CSV IMPORT / EXPORT
+// ═══════════════════════════════════════════════════════════════════
+
+/*
+  CSV column order:
+  id, name, mealType, kidApprovalScore, prepTime, cookTime, totalTime,
+  totalCostEstimate, tags (comma-sep, quoted), recipeLink, thumbedDown,
+  ingredients (pipe-sep name:qty:cost triples)
+*/
+
+function exportCSV() {
+  const header = "id,name,mealType,kidApprovalScore,prepTime,cookTime,totalTime,totalCostEstimate,tags,recipeLink,recipeDesc,thumbedDown,ingredients";
+  const rows = MEALS.map(m => {
+    const tags  = `"${(m.tags||[]).join(",")}"`;
+    const ings  = `"${(m.ingredients||[]).map(i=>`${i.name}:${i.quantity||''}:${i.estimatedCost||0}`).join("|")}"`;
+    const desc  = `"${(m.recipeDesc||'').replace(/"/g,'""')}"`;
+    return [m.id,`"${m.name}"`,m.mealType,m.kidApprovalScore||3,m.prepTime||0,m.cookTime||0,m.totalTime||0,m.totalCostEstimate||0,tags,m.recipeLink||'',desc,m.thumbedDown||false,ings].join(",");
+  });
+  const csv  = [header,...rows].join("\n");
+  const blob = new Blob([csv], { type:"text/csv" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a"); a.href=url; a.download="meals.csv"; a.click();
+  URL.revokeObjectURL(url);
+  toast("CSV exported ✓", "success");
+}
+
+function importCSV(input) {
+  const file = input.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const lines = e.target.result.split("\n").filter(Boolean);
+      const header = lines[0].split(",");
+      const col = name => header.indexOf(name);
+
+      const imported = lines.slice(1).map(line => {
+        // Simple CSV parse — handles double-quoted fields
+        const fields = [];
+        let cur="", inQ=false;
+        for (let i=0; i<line.length; i++) {
+          const ch=line[i];
+          if (ch==='"') { inQ=!inQ; }
+          else if (ch===','&&!inQ) { fields.push(cur); cur=""; }
+          else cur+=ch;
+        }
+        fields.push(cur);
+
+        const get = name => (fields[col(name)]||"").trim().replace(/^"|"$/g,"");
+        const tags = get("tags").split(",").map(t=>t.trim()).filter(Boolean);
+        const ings = get("ingredients").split("|").filter(Boolean).map(s=>{
+          const [name,quantity,cost]=s.split(":"); return {name,quantity,estimatedCost:parseFloat(cost)||0};
+        });
+
+        return {
+          id:                 get("id")||"custom_"+Date.now(),
+          name:               get("name"),
+          mealType:           get("mealType")||"dinner",
+          kidApprovalScore:   parseInt(get("kidApprovalScore"))||3,
+          prepTime:           parseInt(get("prepTime"))||0,
+          cookTime:           parseInt(get("cookTime"))||0,
+          totalTime:          parseInt(get("totalTime"))||0,
+          totalCostEstimate:  parseFloat(get("totalCostEstimate"))||0,
+          tags,
+          recipeLink:         get("recipeLink")||null,
+          recipeDesc:         get("recipeDesc")||"",
+          thumbedDown:        get("thumbedDown")==="true",
+          ingredients:        ings,
+        };
+      }).filter(m=>m.name);
+
+      if (!imported.length) { toast("No valid meals found in CSV", "error"); return; }
+      MEALS = imported; ML = buildLookup(); persist(); renderMealTable();
+      toast(`${imported.length} meals imported ✓`, "success");
+    } catch(err) {
+      toast("CSV parse error: " + err.message, "error");
+    }
+    input.value="";
+  };
+  reader.readAsText(file);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MODAL / TOAST UTILITIES
+// ═══════════════════════════════════════════════════════════════════
+
+function closeModal(id, e) {
+  if (e && e.target !== document.getElementById(id)) return;
+  document.getElementById(id).classList.remove("open");
+}
+document.addEventListener("keydown", e => {
+  if (e.key==="Escape") document.querySelectorAll(".modal-backdrop.open").forEach(m=>m.classList.remove("open"));
+});
+
+function toast(msg, type="") {
+  const el = document.createElement("div");
+  el.className = "toast " + type;
+  el.textContent = msg;
+  document.getElementById("toast-container").appendChild(el);
+  setTimeout(()=>el.remove(), 3200);
+}
+
+// ── Init ──────────────────────────────────────────────────────────
+renderMealTable();
+renderFeedback();
+renderExclusions();
+</script>
+</body>
+</html>
