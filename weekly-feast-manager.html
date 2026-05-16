@@ -159,9 +159,10 @@
   <header>
     <div class="brand">
       <h1>Weekly Feast — Manager</h1>
-      <p>Edit meals, review feedback, and manage exclusions</p>
+      <p>Edit meals, review feedback, and manage exclusions &nbsp;·&nbsp; <a href="index.html" style="color:var(--amber);text-decoration:none;font-weight:500">← Back to Planner</a></p>
     </div>
     <div class="header-actions">
+      <span id="sync-status" style="font-size:11px;font-weight:500;color:var(--ink-soft);transition:color .3s"></span>
       <button class="btn btn-outline" onclick="exportCSV()">⬇ Export CSV</button>
       <label class="btn btn-outline" style="cursor:pointer">
         ⬆ Import CSV
@@ -398,12 +399,39 @@
 
 <script>
 // ═══════════════════════════════════════════════════════════════════
-// DATA — mirrors weekly-feast.html, loaded from sessionStorage if available
+// SUPABASE — same project as the main app, same tables
+// ═══════════════════════════════════════════════════════════════════
+
+const SB_URL = "https://ltcukmqocxwfbvlsovnj.supabase.co";
+const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx0Y3VrbXFvY3h3ZmJ2bHNvdm5qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4NDMxMDAsImV4cCI6MjA5NDQxOTEwMH0.vViIrmuOEf8Hxw_xnCj3UnM0EqtFe-Uc-leeA9ULM_k";
+
+const SB_HEADERS = {
+  "Content-Type":  "application/json",
+  "apikey":        SB_KEY,
+  "Authorization": "Bearer " + SB_KEY,
+  "Prefer":        "resolution=merge-duplicates",
+};
+
+async function sbFetch(method, table, body = null, query = "") {
+  try {
+    const res = await fetch(`${SB_URL}/rest/v1/${table}${query}`, {
+      method, headers: SB_HEADERS,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) { console.warn("Supabase error", res.status, await res.text()); return null; }
+    if (method === "GET") return await res.json();
+    return true;
+  } catch (e) { console.warn("Supabase offline?", e.message); return null; }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DATA
 // ═══════════════════════════════════════════════════════════════════
 
 const CUISINE_TAGS = new Set(["italian","mexican","asian","american","mediterranean","indian","thai","japanese","korean","french","greek"]);
 
-let MEALS = JSON.parse(sessionStorage.getItem("wf_meals") || "null") || [
+// Default meal list — only used if Supabase is empty on first load
+const DEFAULT_MEALS = [
   {id:"b1",name:"Scrambled Eggs & Toast",    mealType:"breakfast",kidApprovalScore:4,prepTime:5, cookTime:10,totalTime:15,totalCostEstimate:6, tags:["easy","quick"],             recipeLink:null,recipeDesc:"",thumbedDown:false,ingredients:[{name:"eggs",quantity:"8",estimatedCost:2},{name:"bread",quantity:"4 slices",estimatedCost:1},{name:"butter",quantity:"2 tbsp",estimatedCost:.5},{name:"milk",quantity:"1/4 cup",estimatedCost:.3}]},
   {id:"b2",name:"Pancakes",                  mealType:"breakfast",kidApprovalScore:5,prepTime:10,cookTime:20,totalTime:30,totalCostEstimate:8, tags:["kid-friendly","weekend"],    recipeLink:"https://www.allrecipes.com/recipe/21014/good-old-fashioned-pancakes/",recipeDesc:"",thumbedDown:false,ingredients:[{name:"flour",quantity:"2 cups",estimatedCost:1},{name:"eggs",quantity:"2",estimatedCost:.5},{name:"milk",quantity:"1 cup",estimatedCost:.5},{name:"maple syrup",quantity:"1/4 cup",estimatedCost:1},{name:"butter",quantity:"2 tbsp",estimatedCost:.5}]},
   {id:"b3",name:"Yogurt & Fruit Parfait",    mealType:"breakfast",kidApprovalScore:4,prepTime:5, cookTime:0, totalTime:5, totalCostEstimate:7, tags:["no-cook","quick"],           recipeLink:null,recipeDesc:"",thumbedDown:false,ingredients:[{name:"yogurt",quantity:"2 cups",estimatedCost:3},{name:"strawberry",quantity:"1 cup",estimatedCost:2},{name:"blueberry",quantity:"1/2 cup",estimatedCost:2},{name:"honey",quantity:"2 tbsp",estimatedCost:.5}]},
@@ -424,18 +452,91 @@ let MEALS = JSON.parse(sessionStorage.getItem("wf_meals") || "null") || [
   {id:"d8",name:"Korean Beef Bowls",         mealType:"dinner",   kidApprovalScore:3,prepTime:15,cookTime:20,totalTime:35,totalCostEstimate:19,tags:["asian","new"],              recipeLink:"https://www.budgetbytes.com/korean-beef-bowl/",recipeDesc:"",thumbedDown:false,ingredients:[{name:"ground beef",quantity:"1.5 lbs",estimatedCost:9},{name:"rice",quantity:"2 cups",estimatedCost:1},{name:"soy sauce",quantity:"4 tbsp",estimatedCost:.5},{name:"garlic",quantity:"4 cloves",estimatedCost:.4},{name:"ginger",quantity:"1 tsp",estimatedCost:.3},{name:"scallion",quantity:"4",estimatedCost:.5}]},
 ];
 
-let FEEDBACK = JSON.parse(sessionStorage.getItem("wf_feedback") || "[]");
-
-function persist() {
-  sessionStorage.setItem("wf_meals", JSON.stringify(MEALS));
-  sessionStorage.setItem("wf_feedback", JSON.stringify(FEEDBACK));
-}
+let MEALS    = [];
+let FEEDBACK = [];
 
 function buildLookup() { return Object.fromEntries(MEALS.map(m=>[m.id,m])); }
 let ML = buildLookup();
 
-// ─── Edit State ───────────────────────────────────────────────────
-let editingId = null; // null = new meal
+let editingId = null;
+
+// ── Sync helpers ──────────────────────────────────────────────────
+
+function setSyncStatus(state) {
+  const el = document.getElementById("sync-status");
+  if (!el) return;
+  const MAP = {
+    syncing: { text:"Syncing…",  color:"var(--amber)"   },
+    synced:  { text:"Synced ✓",  color:"var(--green)"   },
+    offline: { text:"Offline",   color:"var(--ink-soft)" },
+  };
+  const s = MAP[state] || {};
+  el.textContent = s.text || "";
+  el.style.color  = s.color || "";
+}
+
+async function loadAll() {
+  setSyncStatus("syncing");
+
+  // Load meals
+  const remoteMeals = await sbFetch("GET", "meals", null, "?select=data&order=id");
+  if (remoteMeals && remoteMeals.length > 0) {
+    MEALS = remoteMeals.map(r => r.data);
+  } else if (remoteMeals && remoteMeals.length === 0) {
+    // First ever load — seed the database with defaults
+    MEALS = DEFAULT_MEALS;
+    await sbFetch("POST", "meals", MEALS.map(m => ({ id:m.id, data:m })));
+  } else {
+    // Offline — try localStorage cache
+    try { MEALS = JSON.parse(localStorage.getItem("mgr_meals_cache")||"null") || DEFAULT_MEALS; } catch { MEALS = DEFAULT_MEALS; }
+  }
+  localStorage.setItem("mgr_meals_cache", JSON.stringify(MEALS));
+  ML = buildLookup();
+
+  // Load feedback
+  const remoteFB = await sbFetch("GET", "feedback", null, "?select=data&order=created_at.desc");
+  if (remoteFB) {
+    FEEDBACK = remoteFB.map(r => r.data);
+    localStorage.setItem("mgr_fb_cache", JSON.stringify(FEEDBACK));
+  } else {
+    try { FEEDBACK = JSON.parse(localStorage.getItem("mgr_fb_cache")||"[]"); } catch { FEEDBACK = []; }
+  }
+
+  setSyncStatus("synced");
+  setTimeout(() => setSyncStatus(null), 2500);
+}
+
+async function saveMealToDB(meal) {
+  setSyncStatus("syncing");
+  await sbFetch("POST", "meals", [{ id: meal.id, data: meal }]);
+  localStorage.setItem("mgr_meals_cache", JSON.stringify(MEALS));
+  setSyncStatus("synced");
+  setTimeout(() => setSyncStatus(null), 2000);
+}
+
+async function deleteMealFromDB(id) {
+  setSyncStatus("syncing");
+  await sbFetch("DELETE", "meals", null, `?id=eq.${id}`);
+  localStorage.setItem("mgr_meals_cache", JSON.stringify(MEALS));
+  setSyncStatus("synced");
+  setTimeout(() => setSyncStatus(null), 2000);
+}
+
+async function saveFeedbackToDB(entry) {
+  setSyncStatus("syncing");
+  await sbFetch("POST", "feedback", [{ id: entry.id, meal_id: entry.mealId, data: entry }]);
+  localStorage.setItem("mgr_fb_cache", JSON.stringify(FEEDBACK));
+  setSyncStatus("synced");
+  setTimeout(() => setSyncStatus(null), 2000);
+}
+
+async function deleteFeedbackFromDB(id) {
+  setSyncStatus("syncing");
+  await sbFetch("DELETE", "feedback", null, `?id=eq.${id}`);
+  localStorage.setItem("mgr_fb_cache", JSON.stringify(FEEDBACK));
+  setSyncStatus("synced");
+  setTimeout(() => setSyncStatus(null), 2000);
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // TAB SWITCHING
@@ -569,7 +670,7 @@ function addIngRow() {
   document.getElementById("edit-ingredient-rows").appendChild(row);
 }
 
-function saveMeal() {
+async function saveMeal() {
   const name = document.getElementById("edit-name").value.trim();
   if (!name) { toast("Please enter a meal name", "error"); return; }
 
@@ -614,17 +715,19 @@ function saveMeal() {
   }
 
   ML = buildLookup();
-  persist();
+  const saved = editingId ? ML[editingId] : MEALS[MEALS.length-1];
+  await saveMealToDB(saved);
   closeEditPanel();
   renderMealTable();
 }
 
-function deleteMeal() {
+async function deleteMeal() {
   if (!editingId) return;
   if (!confirm("Delete this meal? This can't be undone.")) return;
-  MEALS = MEALS.filter(m=>m.id!==editingId);
+  const id = editingId;
+  MEALS = MEALS.filter(m=>m.id!==id);
   ML = buildLookup();
-  persist();
+  await deleteMealFromDB(id);
   closeEditPanel();
   renderMealTable();
   toast("Meal deleted");
@@ -666,20 +769,20 @@ function showRecipe(id) {
 // EXCLUSIONS
 // ═══════════════════════════════════════════════════════════════════
 
-function toggleExclusion(id) {
+async function toggleExclusion(id) {
   const m = ML[id];
   if (!m) return;
   m.thumbedDown = !m.thumbedDown;
-  persist();
+  await saveMealToDB(m);
   renderMealTable();
   renderExclusions();
   toast(m.thumbedDown ? `"${m.name}" excluded` : `"${m.name}" re-enabled`, m.thumbedDown ? "error" : "success");
 }
 
-function clearAllExclusions() {
+async function clearAllExclusions() {
   if (!confirm("Re-enable all excluded meals?")) return;
   MEALS.forEach(m => m.thumbedDown = false);
-  persist();
+  await Promise.all(MEALS.map(m => saveMealToDB(m)));
   renderExclusions();
   renderMealTable();
   toast("All exclusions cleared", "success");
@@ -712,7 +815,7 @@ function openLogFeedback() {
   document.getElementById("modal-feedback").classList.add("open");
 }
 
-function saveFeedback() {
+async function saveFeedback() {
   const mealId = document.getElementById("fb-meal-select").value;
   const tier   = document.getElementById("fb-tier-select").value;
   const date   = document.getElementById("fb-date").value;
@@ -733,7 +836,7 @@ function saveFeedback() {
   };
 
   FEEDBACK.push(entry);
-  persist();
+  await saveFeedbackToDB(entry);
   closeModal("modal-feedback");
   renderFeedback();
   toast("Feedback saved ✓", "success");
@@ -793,10 +896,10 @@ function renderFeedback() {
   }).join("");
 }
 
-function deleteFeedback(id) {
+async function deleteFeedback(id) {
   if (!confirm("Delete this feedback entry?")) return;
   FEEDBACK = FEEDBACK.filter(f=>f.id!==id);
-  persist();
+  await deleteFeedbackFromDB(id);
   renderFeedback();
   toast("Feedback deleted");
 }
@@ -831,7 +934,7 @@ function exportCSV() {
 function importCSV(input) {
   const file = input.files[0]; if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {   // async here — fixes the await error
     try {
       const lines = e.target.result.split("\n").filter(Boolean);
       const header = lines[0].split(",");
@@ -873,7 +976,14 @@ function importCSV(input) {
       }).filter(m=>m.name);
 
       if (!imported.length) { toast("No valid meals found in CSV", "error"); return; }
-      MEALS = imported; ML = buildLookup(); persist(); renderMealTable();
+
+      MEALS = imported; ML = buildLookup();
+      setSyncStatus("syncing");
+      await sbFetch("POST", "meals", MEALS.map(m => ({ id:m.id, data:m })));
+      localStorage.setItem("mgr_meals_cache", JSON.stringify(MEALS));
+      setSyncStatus("synced");
+      setTimeout(() => setSyncStatus(null), 2000);
+      renderMealTable();
       toast(`${imported.length} meals imported ✓`, "success");
     } catch(err) {
       toast("CSV parse error: " + err.message, "error");
@@ -904,9 +1014,12 @@ function toast(msg, type="") {
 }
 
 // ── Init ──────────────────────────────────────────────────────────
-renderMealTable();
-renderFeedback();
-renderExclusions();
+(async () => {
+  await loadAll();
+  renderMealTable();
+  renderFeedback();
+  renderExclusions();
+})();
 </script>
 </body>
 </html>
