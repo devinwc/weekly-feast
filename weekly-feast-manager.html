@@ -572,8 +572,8 @@ async function deleteFeedbackFromDB(id) {
 // GEMINI RECIPE IMPORT
 // ═══════════════════════════════════════════════════════════════════
 
-const GEMINI_KEY   = "AIzaSyAbuNM_9jSoWc5ApXkAEvs4DU9kDiYYbhc";
-const GEMINI_MODEL = "gemini-1.5-flash-latest";
+const GEMINI_KEY   = "AIzaSyCCopH2sbITgNO6zH-yEkFCM4tiksv2xkE";
+const GEMINI_MODEL = "gemini-2.0-flash";
 const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`;
 
 /**
@@ -620,22 +620,52 @@ URL: ${url}
 `;
 
   try {
-    const res = await fetch(GEMINI_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
-      }),
-    });
+    // Try the primary model first, fall back to 1.5-flash if not available
+    const MODELS_TO_TRY = [
+      "gemini-2.0-flash",
+      "gemini-1.5-flash",
+      "gemini-1.0-pro",
+    ];
 
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err?.error?.message || `HTTP ${res.status}`);
+    let raw = null;
+    let lastError = null;
+
+    for (const model of MODELS_TO_TRY) {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
+      try {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          const msg = err?.error?.message || `HTTP ${res.status}`;
+          // If model not found or quota, try next model
+          if (msg.includes("not found") || msg.includes("quota") || msg.includes("not supported")) {
+            lastError = msg;
+            continue;
+          }
+          throw new Error(msg);
+        }
+
+        const data = await res.json();
+        raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        break; // success — stop trying models
+      } catch (e) {
+        if (e.message.includes("not found") || e.message.includes("quota")) {
+          lastError = e.message;
+          continue;
+        }
+        throw e;
+      }
     }
 
-    const data  = await res.json();
-    const raw   = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    if (!raw) throw new Error(lastError || "No models available. Please check your API key.");
 
     // Strip any accidental markdown fences Gemini occasionally adds
     const clean = raw.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
