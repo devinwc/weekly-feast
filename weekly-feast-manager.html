@@ -690,7 +690,13 @@ URL: ${url}
     const jsonStart = clean.indexOf("{");
     const jsonEnd   = clean.lastIndexOf("}");
     if (jsonStart === -1 || jsonEnd === -1) {
-      throw new Error("Gemini didn't return a recognizable recipe. The site may be paywalled or unsupported.");
+      // Show the raw response in the console so it's diagnosable
+      console.warn("Gemini raw response:", raw);
+      throw new Error(
+        `Gemini couldn't extract a recipe from that page. ` +
+        `Raw response logged to browser console (F12 → Console). ` +
+        `Common causes: site blocks AI crawlers, login required, or unusual page layout.`
+      );
     }
     clean = clean.slice(jsonStart, jsonEnd + 1);
     const recipe = JSON.parse(clean);
