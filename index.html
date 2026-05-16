@@ -532,7 +532,8 @@ async function sbFetch(method, table, body = null, query = "") {
     if (method === "GET") return await res.json();
     return true;
   } catch (e) {
-    console.warn("Supabase fetch failed (offline?)", e.message);
+    // Only log as offline if it's a network failure, not a bad response
+    console.warn("Supabase fetch failed", e.message);
     return null;
   }
 }
@@ -540,10 +541,10 @@ async function sbFetch(method, table, body = null, query = "") {
 // ── MEALS ──────────────────────────────────────────────────────────
 
 async function saveMealsToDB() {
-  // Upsert all meals as individual rows — each meal is one row keyed by id.
   const rows = MEALS.map(m => ({ id: m.id, data: m }));
-  await sbFetch("POST", "meals", rows);
+  const ok = await sbFetch("POST", "meals", rows);
   localStorage.setItem("wf_meals_cache", JSON.stringify(MEALS));
+  return ok;
 }
 
 async function loadMealsFromDB() {
@@ -552,32 +553,34 @@ async function loadMealsFromDB() {
     MEALS = remote.map(r => r.data);
     ML = buildLookup();
     localStorage.setItem("wf_meals_cache", JSON.stringify(MEALS));
-    return;
+    return true;
   }
   // Offline fallback — use local cache if it exists
   const cached = localStorage.getItem("wf_meals_cache");
   if (cached) {
     try { MEALS = JSON.parse(cached); ML = buildLookup(); } catch {}
   }
-  // Otherwise keep the built-in default MEALS array defined above
+  return false; // signals that we used cache, not remote
 }
 
 async function saveOneMealToDB(meal) {
-  await sbFetch("POST", "meals", [{ id: meal.id, data: meal }]);
-  // Update local cache too
+  const ok = await sbFetch("POST", "meals", [{ id: meal.id, data: meal }]);
   localStorage.setItem("wf_meals_cache", JSON.stringify(MEALS));
+  return ok;
 }
 
 async function deleteMealFromDB(mealId) {
-  await sbFetch("DELETE", "meals", null, `?id=eq.${mealId}`);
+  const ok = await sbFetch("DELETE", "meals", null, `?id=eq.${mealId}`);
   localStorage.setItem("wf_meals_cache", JSON.stringify(MEALS));
+  return ok;
 }
 
 // ── SETTINGS (thumbed-down list) ───────────────────────────────────
 
 async function saveThumbedDownToDB() {
-  await sbFetch("POST", "settings", [{ key: "thumbedDown", value: [...thumbedDown] }]);
+  const ok = await sbFetch("POST", "settings", [{ key: "thumbedDown", value: [...thumbedDown] }]);
   localStorage.setItem("wf_td_cache", JSON.stringify([...thumbedDown]));
+  return ok;
 }
 
 async function loadThumbedDownFromDB() {
@@ -585,17 +588,19 @@ async function loadThumbedDownFromDB() {
   if (remote && remote.length > 0) {
     thumbedDown = new Set(remote[0].value || []);
     localStorage.setItem("wf_td_cache", JSON.stringify([...thumbedDown]));
-    return;
+    return true;
   }
   const cached = localStorage.getItem("wf_td_cache");
   if (cached) { try { thumbedDown = new Set(JSON.parse(cached)); } catch {} }
+  return false;
 }
 
 // ── CONFIRMED WEEKS ────────────────────────────────────────────────
 
 async function saveConfirmedWeekToDB(week) {
-  await sbFetch("POST", "confirmed_weeks", [{ week_id: week.weekId, data: week }]);
+  const ok = await sbFetch("POST", "confirmed_weeks", [{ week_id: week.weekId, data: week }]);
   localStorage.setItem("wf_confirmed_cache", JSON.stringify(confirmedWeeks));
+  return ok;
 }
 
 async function loadConfirmedWeeksFromDB() {
@@ -603,58 +608,99 @@ async function loadConfirmedWeeksFromDB() {
   if (remote && remote.length > 0) {
     confirmedWeeks = remote.map(r => r.data);
     localStorage.setItem("wf_confirmed_cache", JSON.stringify(confirmedWeeks));
-    return;
+    return true;
   }
   const cached = localStorage.getItem("wf_confirmed_cache");
   if (cached) { try { confirmedWeeks = JSON.parse(cached); } catch {} }
+  return false;
 }
 
 async function deleteConfirmedWeekFromDB(weekId) {
-  await sbFetch("DELETE", "confirmed_weeks", null, `?week_id=eq.${encodeURIComponent(weekId)}`);
+  const ok = await sbFetch("DELETE", "confirmed_weeks", null, `?week_id=eq.${encodeURIComponent(weekId)}`);
   localStorage.setItem("wf_confirmed_cache", JSON.stringify(confirmedWeeks));
+  return ok;
 }
 
 // ── SYNC STATUS UI ─────────────────────────────────────────────────
 
+let _syncTimer = null;
+
 function setSyncStatus(state) {
-  // state: "syncing" | "synced" | "offline"
   const el = document.getElementById("sync-status");
   if (!el) return;
+
+  // Clear any pending auto-hide timer
+  if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
+
+  if (!state || state === "hidden") {
+    // Blank it out completely — don't show "Offline"
+    el.textContent = "";
+    return;
+  }
+
   const MAP = {
-    syncing: { text: "Syncing…",  color: "var(--amber)",    icon: "⟳" },
-    synced:  { text: "Synced ✓",  color: "var(--green)",    icon: "" },
-    offline: { text: "Offline",   color: "var(--ink-soft)",  icon: "◌" },
+    syncing: { text: "Syncing…", color: "var(--amber)"   },
+    synced:  { text: "Synced ✓", color: "var(--green)"   },
+    offline: { text: "Offline",  color: "var(--ink-soft)" },
   };
-  const s = MAP[state] || MAP.offline;
-  el.textContent = s.icon + " " + s.text;
-  el.style.color = s.color;
+  const s = MAP[state];
+  if (!s) { el.textContent = ""; return; } // unknown state — hide silently
+
+  el.textContent = s.text;
+  el.style.color  = s.color;
+
+  // Auto-hide "Synced" after 2.5s — "Offline" stays visible until resolved
+  if (state === "synced") {
+    _syncTimer = setTimeout(() => { el.textContent = ""; }, 2500);
+  }
+}
+
+/**
+ * Wraps any DB write with syncing/synced/offline status.
+ * Avoids repeating setSyncStatus calls in every save function.
+ */
+async function withSyncStatus(fn) {
+  setSyncStatus("syncing");
+  const ok = await fn();
+  if (ok === null || ok === false) {
+    // Only show offline if we actually failed to reach the server
+    if (!navigator.onLine) {
+      setSyncStatus("offline");
+    } else {
+      // Server error or empty result — hide silently, data is cached locally
+      setSyncStatus("hidden");
+    }
+  } else {
+    setSyncStatus("synced");
+  }
+  return ok;
 }
 
 // ── APP INIT ───────────────────────────────────────────────────────
 
-/**
- * Called once on page load.
- * Loads all data from Supabase (falling back to local cache if offline),
- * then initialises the UI.
- */
 async function initApp() {
   setSyncStatus("syncing");
-  await Promise.all([
+
+  const results = await Promise.all([
     loadMealsFromDB(),
     loadThumbedDownFromDB(),
     loadConfirmedWeeksFromDB(),
   ]);
-  setSyncStatus("synced");
-  setTimeout(() => setSyncStatus(null), 3000);
 
-  // If this is the very first load ever (no data in Supabase yet),
-  // push the default meal list up so other devices can see it.
+  // Show offline only if ALL three loads failed (truly no connection)
+  const anySucceeded = results.some(r => r === true);
+  if (!anySucceeded && !navigator.onLine) {
+    setSyncStatus("offline");
+  } else {
+    setSyncStatus("synced");
+  }
+
+  // If this is the very first load (Supabase is empty), seed the database
   const hasMealsInDB = await sbFetch("GET", "meals", null, "?select=id&limit=1");
   if (hasMealsInDB && hasMealsInDB.length === 0) {
     setSyncStatus("syncing");
-    await saveMealsToDB();
-    setSyncStatus("synced");
-    setTimeout(() => setSyncStatus(null), 2000);
+    const ok = await saveMealsToDB();
+    setSyncStatus(ok ? "synced" : "hidden");
   }
 
   renderScheduleRow();
@@ -1268,12 +1314,12 @@ function clearLeftover(di, type) {
 
 async function toggleTD(id) {
   thumbedDown.has(id) ? thumbedDown.delete(id) : thumbedDown.add(id);
-  saveThumbedDownToDB();
+  withSyncStatus(() => saveThumbedDownToDB());
   renderPlan(currentPlan); renderGrocery(currentPlan);
 }
 async function clearTD() {
   thumbedDown.clear();
-  saveThumbedDownToDB();
+  withSyncStatus(() => saveThumbedDownToDB());
   renderPlan(currentPlan);
 }
 
@@ -1422,7 +1468,7 @@ async function submitNewMeal() {
   });
   const m={id:`custom_${Date.now()}`,name,mealType:type,kidApprovalScore:kid,prepTime:prep,cookTime:cook,totalTime:prep+cook,totalCostEstimate:Math.round(cost*100)/100,tags,recipeLink:link,thumbedDown:false,lastServed:null,ingredients:ings};
   MEALS.push(m); ML=buildLookup();
-  saveOneMealToDB(m);
+  withSyncStatus(() => saveOneMealToDB(m));
   fb.innerHTML=`<span style="color:var(--green)">✓ "${name}" added!</span>`;
   clearMealForm(); setTimeout(()=>fb.innerHTML="",3000);
 }
@@ -1563,7 +1609,7 @@ async function doConfirmWeek() {
 
   // Prepend so history shows newest first
   confirmedWeeks.unshift(snapshot);
-  await saveConfirmedWeekToDB(snapshot);
+  withSyncStatus(() => saveConfirmedWeekToDB(snapshot));
 
   // 3. Update UI
   closeModal("modal-confirm");
@@ -1654,7 +1700,7 @@ function toggleHistoryCard(wi) {
 function deleteConfirmedWeek(weekId) {
   if (!confirm("Remove this week from your history?")) return;
   confirmedWeeks = confirmedWeeks.filter(w => w.weekId !== weekId);
-  deleteConfirmedWeekFromDB(weekId);
+  withSyncStatus(() => deleteConfirmedWeekFromDB(weekId));
   renderHistory();
 }
 

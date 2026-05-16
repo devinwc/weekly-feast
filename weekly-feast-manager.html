@@ -462,38 +462,44 @@ let editingId = null;
 
 // ── Sync helpers ──────────────────────────────────────────────────
 
+let _syncTimer = null;
+
 function setSyncStatus(state) {
   const el = document.getElementById("sync-status");
   if (!el) return;
+  if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
+
+  if (!state || state === "hidden") { el.textContent = ""; return; }
+
   const MAP = {
-    syncing: { text:"Syncing…",  color:"var(--amber)"   },
-    synced:  { text:"Synced ✓",  color:"var(--green)"   },
-    offline: { text:"Offline",   color:"var(--ink-soft)" },
+    syncing: { text: "Syncing…", color: "var(--amber)"   },
+    synced:  { text: "Synced ✓", color: "var(--green)"   },
+    offline: { text: "Offline",  color: "var(--ink-soft)" },
   };
-  const s = MAP[state] || {};
-  el.textContent = s.text || "";
-  el.style.color  = s.color || "";
+  const s = MAP[state];
+  if (!s) { el.textContent = ""; return; }
+  el.textContent = s.text;
+  el.style.color  = s.color;
+  if (state === "synced") {
+    _syncTimer = setTimeout(() => { el.textContent = ""; }, 2500);
+  }
 }
 
 async function loadAll() {
   setSyncStatus("syncing");
 
-  // Load meals
   const remoteMeals = await sbFetch("GET", "meals", null, "?select=data&order=id");
   if (remoteMeals && remoteMeals.length > 0) {
     MEALS = remoteMeals.map(r => r.data);
   } else if (remoteMeals && remoteMeals.length === 0) {
-    // First ever load — seed the database with defaults
     MEALS = DEFAULT_MEALS;
     await sbFetch("POST", "meals", MEALS.map(m => ({ id:m.id, data:m })));
   } else {
-    // Offline — try localStorage cache
     try { MEALS = JSON.parse(localStorage.getItem("mgr_meals_cache")||"null") || DEFAULT_MEALS; } catch { MEALS = DEFAULT_MEALS; }
   }
   localStorage.setItem("mgr_meals_cache", JSON.stringify(MEALS));
   ML = buildLookup();
 
-  // Load feedback
   const remoteFB = await sbFetch("GET", "feedback", null, "?select=data&order=created_at.desc");
   if (remoteFB) {
     FEEDBACK = remoteFB.map(r => r.data);
@@ -502,40 +508,51 @@ async function loadAll() {
     try { FEEDBACK = JSON.parse(localStorage.getItem("mgr_fb_cache")||"[]"); } catch { FEEDBACK = []; }
   }
 
-  setSyncStatus("synced");
-  setTimeout(() => setSyncStatus(null), 2500);
+  // Only show offline when we're genuinely without a connection
+  if (!remoteMeals && !navigator.onLine) {
+    setSyncStatus("offline");
+  } else {
+    setSyncStatus("synced");
+  }
+}
+
+async function withSyncStatus(fn) {
+  setSyncStatus("syncing");
+  const ok = await fn();
+  if (ok === null || ok === false) {
+    setSyncStatus(navigator.onLine ? "hidden" : "offline");
+  } else {
+    setSyncStatus("synced");
+  }
+  return ok;
 }
 
 async function saveMealToDB(meal) {
-  setSyncStatus("syncing");
-  await sbFetch("POST", "meals", [{ id: meal.id, data: meal }]);
-  localStorage.setItem("mgr_meals_cache", JSON.stringify(MEALS));
-  setSyncStatus("synced");
-  setTimeout(() => setSyncStatus(null), 2000);
+  return withSyncStatus(() => sbFetch("POST", "meals", [{ id: meal.id, data: meal }]).then(ok => {
+    if (ok) localStorage.setItem("mgr_meals_cache", JSON.stringify(MEALS));
+    return ok;
+  }));
 }
 
 async function deleteMealFromDB(id) {
-  setSyncStatus("syncing");
-  await sbFetch("DELETE", "meals", null, `?id=eq.${id}`);
-  localStorage.setItem("mgr_meals_cache", JSON.stringify(MEALS));
-  setSyncStatus("synced");
-  setTimeout(() => setSyncStatus(null), 2000);
+  return withSyncStatus(() => sbFetch("DELETE", "meals", null, `?id=eq.${id}`).then(ok => {
+    if (ok) localStorage.setItem("mgr_meals_cache", JSON.stringify(MEALS));
+    return ok;
+  }));
 }
 
 async function saveFeedbackToDB(entry) {
-  setSyncStatus("syncing");
-  await sbFetch("POST", "feedback", [{ id: entry.id, meal_id: entry.mealId, data: entry }]);
-  localStorage.setItem("mgr_fb_cache", JSON.stringify(FEEDBACK));
-  setSyncStatus("synced");
-  setTimeout(() => setSyncStatus(null), 2000);
+  return withSyncStatus(() => sbFetch("POST", "feedback", [{ id: entry.id, meal_id: entry.mealId, data: entry }]).then(ok => {
+    if (ok) localStorage.setItem("mgr_fb_cache", JSON.stringify(FEEDBACK));
+    return ok;
+  }));
 }
 
 async function deleteFeedbackFromDB(id) {
-  setSyncStatus("syncing");
-  await sbFetch("DELETE", "feedback", null, `?id=eq.${id}`);
-  localStorage.setItem("mgr_fb_cache", JSON.stringify(FEEDBACK));
-  setSyncStatus("synced");
-  setTimeout(() => setSyncStatus(null), 2000);
+  return withSyncStatus(() => sbFetch("DELETE", "feedback", null, `?id=eq.${id}`).then(ok => {
+    if (ok) localStorage.setItem("mgr_fb_cache", JSON.stringify(FEEDBACK));
+    return ok;
+  }));
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -978,11 +995,10 @@ function importCSV(input) {
       if (!imported.length) { toast("No valid meals found in CSV", "error"); return; }
 
       MEALS = imported; ML = buildLookup();
-      setSyncStatus("syncing");
-      await sbFetch("POST", "meals", MEALS.map(m => ({ id:m.id, data:m })));
-      localStorage.setItem("mgr_meals_cache", JSON.stringify(MEALS));
-      setSyncStatus("synced");
-      setTimeout(() => setSyncStatus(null), 2000);
+      await withSyncStatus(() => sbFetch("POST", "meals", MEALS.map(m => ({ id:m.id, data:m }))).then(ok => {
+        if (ok) localStorage.setItem("mgr_meals_cache", JSON.stringify(MEALS));
+        return ok;
+      }));
       renderMealTable();
       toast(`${imported.length} meals imported ✓`, "success");
     } catch(err) {
