@@ -591,9 +591,16 @@ async function importFromUrl() {
   setImportStatus("Fetching recipe — this takes about 10 seconds…", "info");
 
   const prompt = `
-You are a recipe data extractor. Visit the URL below, read the recipe page, and return ONLY a valid JSON object — no markdown, no explanation, no code fences. Just raw JSON.
+You are a recipe data extractor. Visit the URL below, read the recipe page, and return ONLY a valid JSON object.
 
-Extract the following fields. If a field is not present on the page, use the default shown.
+CRITICAL FORMATTING RULES — you must follow these exactly:
+- Return ONLY the raw JSON object. No markdown, no code fences, no backticks.
+- No JavaScript comments (no // or /* */)
+- No trailing commas after the last item in any array or object
+- All strings must use double quotes
+- Numbers must be plain integers or decimals, never strings
+
+Extract these fields:
 
 {
   "name": "Full recipe name",
@@ -602,19 +609,18 @@ Extract the following fields. If a field is not present on the page, use the def
   "cookTime": 0,
   "servings": 4,
   "tags": [],
-  "recipeDesc": "A 1–2 sentence description of the dish. If none exists, write a brief one based on the ingredients.",
+  "recipeDesc": "A 1-2 sentence description of the dish",
   "ingredients": [
-    { "name": "ingredient name", "quantity": "amount and unit e.g. 2 lbs or 1 cup", "estimatedCost": 0 }
+    { "name": "ingredient name", "quantity": "2 lbs", "estimatedCost": 0 }
   ]
 }
 
-Rules:
-- mealType must be exactly "breakfast", "lunch", or "dinner" — infer from context if not stated
-- prepTime and cookTime are integers in minutes. Convert "PT15M" or "15 minutes" to 15
-- tags should be a short array of relevant labels from this list only: italian, mexican, asian, american, mediterranean, kid-friendly, quick, healthy, vegetarian, weekend, no-cook, easy, new
-- ingredients: include ALL ingredients listed. quantity should be a human-readable string like "2 lbs" or "1/2 cup". estimatedCost is always 0
-- recipeDesc: plain text, no HTML
-- Return ONLY the JSON object. No other text whatsoever.
+Field rules:
+- mealType: must be exactly "breakfast", "lunch", or "dinner"
+- prepTime and cookTime: integers in minutes only (convert "PT15M" to 15)
+- tags: array of strings chosen only from: italian, mexican, asian, american, mediterranean, kid-friendly, quick, healthy, vegetarian, weekend, no-cook, easy, new
+- ingredients: include every ingredient. quantity is a human-readable string. estimatedCost is always 0
+- recipeDesc: plain text only, no HTML tags
 
 URL: ${url}
 `;
@@ -639,8 +645,23 @@ URL: ${url}
 
     if (!raw) throw new Error("Gemini returned an empty response. Please try again.");
 
-    // Strip any accidental markdown fences Gemini occasionally adds
-    const clean = raw.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+    // Gemini sometimes returns markdown fences, comments, or trailing commas
+    // even when instructed not to. Clean all of it before parsing.
+    let clean = raw
+      .replace(/^```(?:json)?/im, "")   // opening ```json or ```
+      .replace(/```\s*$/m, "")          // closing ```
+      .replace(/\/\/.*$/gm, "")         // strip // comments
+      .replace(/\/\*[\s\S]*?\*\//g, "") // strip /* block comments */
+      .replace(/,\s*([}\]])/g, "$1")    // strip trailing commas
+      .trim();
+
+    // Extract just the JSON object in case there's any preamble text
+    const jsonStart = clean.indexOf("{");
+    const jsonEnd   = clean.lastIndexOf("}");
+    if (jsonStart === -1 || jsonEnd === -1) {
+      throw new Error("Gemini didn't return a recognizable recipe. The site may be paywalled or unsupported.");
+    }
+    clean = clean.slice(jsonStart, jsonEnd + 1);
     const recipe = JSON.parse(clean);
 
     if (!recipe.name) throw new Error("Gemini returned data but couldn't find a recipe name. The site may be paywalled or unsupported.");
