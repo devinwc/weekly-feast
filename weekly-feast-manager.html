@@ -212,7 +212,20 @@
         <button class="btn btn-ghost" onclick="closeEditPanel()">✕ Cancel</button>
       </div>
 
-      <div class="form-grid">
+    <!-- ── URL Import ── -->
+    <div style="margin-bottom:20px; padding:16px 18px; background:var(--amber-lt); border:1.5px solid #FDE68A; border-radius:var(--radius);">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--amber);margin-bottom:8px">✨ Import from URL</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="form-input" id="import-url" type="url" placeholder="Paste any recipe URL…" style="flex:1;background:var(--paper)"
+          onkeydown="if(event.key==='Enter') importFromUrl()">
+        <button class="btn btn-primary" id="import-btn" onclick="importFromUrl()" style="white-space:nowrap;flex-shrink:0">
+          Import Recipe
+        </button>
+      </div>
+      <div id="import-status" style="font-size:12px;margin-top:8px;color:var(--ink-soft);min-height:18px"></div>
+    </div>
+
+          <div class="form-grid">
         <div class="form-group">
           <label class="form-label">Meal Name *</label>
           <input class="form-input" id="edit-name" placeholder="e.g. Sheet Pan Tacos">
@@ -556,8 +569,126 @@ async function deleteFeedbackFromDB(id) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// TAB SWITCHING
+// GEMINI RECIPE IMPORT
 // ═══════════════════════════════════════════════════════════════════
+
+const GEMINI_KEY   = "AIzaSyAbuNM_9jSoWc5ApXkAEvs4DU9kDiYYbhc";
+const GEMINI_MODEL = "gemini-1.5-flash";
+const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`;
+
+/**
+ * Sends the recipe URL to Gemini, which fetches and reads the page,
+ * then returns structured JSON matching our meal data model.
+ * Populates the edit form fields automatically on success.
+ */
+async function importFromUrl() {
+  const url = document.getElementById("import-url").value.trim();
+  if (!url) { setImportStatus("Please paste a recipe URL first.", "error"); return; }
+
+  const btn = document.getElementById("import-btn");
+  btn.disabled = true;
+  btn.textContent = "Importing…";
+  setImportStatus("Fetching recipe — this takes about 10 seconds…", "info");
+
+  const prompt = `
+You are a recipe data extractor. Visit the URL below, read the recipe page, and return ONLY a valid JSON object — no markdown, no explanation, no code fences. Just raw JSON.
+
+Extract the following fields. If a field is not present on the page, use the default shown.
+
+{
+  "name": "Full recipe name",
+  "mealType": "dinner",
+  "prepTime": 0,
+  "cookTime": 0,
+  "servings": 4,
+  "tags": [],
+  "recipeDesc": "A 1–2 sentence description of the dish. If none exists, write a brief one based on the ingredients.",
+  "ingredients": [
+    { "name": "ingredient name", "quantity": "amount and unit e.g. 2 lbs or 1 cup", "estimatedCost": 0 }
+  ]
+}
+
+Rules:
+- mealType must be exactly "breakfast", "lunch", or "dinner" — infer from context if not stated
+- prepTime and cookTime are integers in minutes. Convert "PT15M" or "15 minutes" to 15
+- tags should be a short array of relevant labels from this list only: italian, mexican, asian, american, mediterranean, kid-friendly, quick, healthy, vegetarian, weekend, no-cook, easy, new
+- ingredients: include ALL ingredients listed. quantity should be a human-readable string like "2 lbs" or "1/2 cup". estimatedCost is always 0
+- recipeDesc: plain text, no HTML
+- Return ONLY the JSON object. No other text whatsoever.
+
+URL: ${url}
+`;
+
+  try {
+    const res = await fetch(GEMINI_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err?.error?.message || `HTTP ${res.status}`);
+    }
+
+    const data  = await res.json();
+    const raw   = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+    // Strip any accidental markdown fences Gemini occasionally adds
+    const clean = raw.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+    const recipe = JSON.parse(clean);
+
+    if (!recipe.name) throw new Error("Gemini returned data but couldn't find a recipe name. The site may be paywalled or unsupported.");
+
+    // Populate the form
+    document.getElementById("edit-name").value        = recipe.name || "";
+    document.getElementById("edit-type").value        = ["breakfast","lunch","dinner"].includes(recipe.mealType) ? recipe.mealType : "dinner";
+    document.getElementById("edit-prep").value        = parseInt(recipe.prepTime) || 0;
+    document.getElementById("edit-cook").value        = parseInt(recipe.cookTime) || 0;
+    document.getElementById("edit-cost").value        = 0;
+    document.getElementById("edit-tags").value        = (recipe.tags || []).join(", ");
+    document.getElementById("edit-recipe-link").value = url;
+    document.getElementById("edit-recipe-desc").value = recipe.recipeDesc || "";
+
+    // Populate ingredient rows
+    const ings = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
+    renderIngredientRows(ings.map(i => ({
+      name:           i.name     || "",
+      quantity:       i.quantity || "",
+      estimatedCost:  0,
+    })));
+
+    // Clear the URL input
+    document.getElementById("import-url").value = "";
+
+    const count = ings.length;
+    setImportStatus(
+      `✓ Imported "${recipe.name}" with ${count} ingredient${count !== 1 ? "s" : ""}. Review the details below and hit Save when ready.`,
+      "success"
+    );
+
+  } catch (err) {
+    console.error("Gemini import error:", err);
+    setImportStatus(
+      `Import failed: ${err.message}. Try a different URL, or add the meal manually below.`,
+      "error"
+    );
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Import Recipe";
+  }
+}
+
+function setImportStatus(msg, type = "info") {
+  const el = document.getElementById("import-status");
+  if (!el) return;
+  const colors = { info: "var(--ink-soft)", success: "var(--green)", error: "var(--red)" };
+  el.textContent = msg;
+  el.style.color  = colors[type] || "var(--ink-soft)";
+}
 
 function switchTab(t) {
   document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
@@ -660,6 +791,9 @@ function startNewMeal() {
 function showEditPanel() {
   const panel = document.getElementById("edit-panel");
   panel.style.display = "block";
+  // Clear any previous import state
+  document.getElementById("import-url").value = "";
+  document.getElementById("import-status").textContent = "";
   panel.scrollIntoView({ behavior:"smooth", block:"start" });
 }
 
