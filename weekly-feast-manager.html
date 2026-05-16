@@ -572,9 +572,25 @@ async function deleteFeedbackFromDB(id) {
 // GEMINI RECIPE IMPORT
 // ═══════════════════════════════════════════════════════════════════
 
-const GEMINI_KEY   = "AIzaSyCCopH2sbITgNO6zH-yEkFCM4tiksv2xkE";
 const GEMINI_MODEL = "gemini-2.5-flash";
-const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`;
+
+// Gemini API key is stored in Supabase settings table, not hardcoded here.
+// This prevents it from being exposed in the public GitHub repository.
+let GEMINI_URL = null;
+
+async function loadGeminiKey() {
+  try {
+    const res = await sbFetch("GET", "settings", null, "?key=eq.gemini_api_key&select=value");
+    if (res && res.length > 0) {
+      const key = res[0].value;
+      GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`;
+      return true;
+    }
+  } catch (e) {
+    console.warn("Could not load Gemini key from Supabase:", e.message);
+  }
+  return false;
+}
 
 /**
  * Sends the recipe URL to Gemini, which fetches and reads the page,
@@ -589,6 +605,21 @@ async function importFromUrl() {
   btn.disabled = true;
   btn.textContent = "Importing…";
   setImportStatus("Fetching recipe — this takes about 10 seconds…", "info");
+
+  // Load Gemini key from Supabase if not already loaded
+  if (!GEMINI_URL) {
+    setImportStatus("Loading API key…", "info");
+    const keyLoaded = await loadGeminiKey();
+    if (!keyLoaded) {
+      setImportStatus(
+        "Recipe import isn't set up yet. Add your Gemini API key to Supabase: Table Editor → settings → Insert row → key: gemini_api_key, value: \"your-key-here\"",
+        "error"
+      );
+      btn.disabled = false;
+      btn.textContent = "Import Recipe";
+      return;
+    }
+  }
 
   const prompt = `
 You are a recipe data extractor. Visit the URL below, read the recipe page, and return ONLY a valid JSON object.
@@ -1189,6 +1220,7 @@ function toast(msg, type="") {
 // ── Init ──────────────────────────────────────────────────────────
 (async () => {
   await loadAll();
+  await loadGeminiKey(); // load silently on startup so first import is instant
   renderMealTable();
   renderFeedback();
   renderExclusions();
