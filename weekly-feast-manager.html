@@ -572,7 +572,7 @@ async function deleteFeedbackFromDB(id) {
 // GEMINI RECIPE IMPORT
 // ═══════════════════════════════════════════════════════════════════
 
-const GEMINI_MODEL = "gemini-2.0-flash";
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 // Gemini API key is stored in Supabase settings table, not hardcoded here.
 // This prevents it from being exposed in the public GitHub repository.
@@ -668,7 +668,35 @@ URL: ${url}
 
     if (!res.ok) {
       const err = await res.json();
-      throw new Error(err?.error?.message || `HTTP ${res.status}`);
+      const msg = err?.error?.message || `HTTP ${res.status}`;
+
+      // Extract retry delay from the error message if present
+      const retryMatch = msg.match(/retry in ([\d.]+)s/i);
+      const retrySeconds = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : null;
+
+      if (msg.includes("quota") || msg.includes("rate") || res.status === 429) {
+        if (retrySeconds) {
+          // Show a live countdown so the user knows exactly when to retry
+          let remaining = retrySeconds;
+          const countdownInterval = setInterval(() => {
+            remaining--;
+            if (remaining <= 0) {
+              clearInterval(countdownInterval);
+              setImportStatus("Ready — click Import Recipe to try again.", "success");
+              btn.disabled = false;
+              btn.textContent = "Import Recipe";
+            } else {
+              setImportStatus(`Rate limit reached. Ready to retry in ${remaining}s…`, "info");
+            }
+          }, 1000);
+          setImportStatus(`Rate limit reached. Ready to retry in ${retrySeconds}s…`, "info");
+          // Return early without hitting the finally block's button reset
+          return;
+        }
+        throw new Error("Rate limit reached. Wait a minute and try again — the free tier allows 20 imports per minute.");
+      }
+
+      throw new Error(msg);
     }
 
     const data = await res.json();
