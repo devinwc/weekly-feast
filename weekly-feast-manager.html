@@ -600,13 +600,13 @@ async function importFromUrl() {
   const btn = document.getElementById("import-btn");
   btn.disabled = true;
   btn.textContent = "Importing…";
-  setImportStatus("Fetching recipe — this takes about 10–15 seconds…", "info");
+  setImportStatus("Fetching recipe — this takes about 15–30 seconds…", "info");
 
   // Animate the status message so the user knows it's still working
   let dots = 0;
   const progressInterval = setInterval(() => {
     dots = (dots + 1) % 4;
-    setImportStatus("Fetching recipe" + ".".repeat(dots) + " (this can take up to 45 seconds)", "info");
+    setImportStatus("Fetching recipe" + ".".repeat(dots) + " (this can take up to 60 seconds)", "info");
   }, 1500);
 
   // Load Anthropic key from Supabase if not already loaded
@@ -624,54 +624,23 @@ async function importFromUrl() {
     }
   }
 
-  const prompt = `Please visit this URL and extract the recipe information from the page: ${url}
-
-Return ONLY a valid JSON object with no markdown, no code fences, no comments, and no extra text before or after. Just the raw JSON.
-
-Use exactly this structure:
-{
-  "name": "Full recipe name",
-  "mealType": "dinner",
-  "prepTime": 15,
-  "cookTime": 30,
-  "servings": 4,
-  "tags": ["italian", "kid-friendly"],
-  "recipeDesc": "A 1-2 sentence description of the dish",
-  "ingredients": [
-    { "name": "chicken thighs", "quantity": "2 lbs", "estimatedCost": 0 },
-    { "name": "taco seasoning", "quantity": "1 packet", "estimatedCost": 0 }
-  ]
-}
-
-Rules:
-- mealType must be exactly "breakfast", "lunch", or "dinner"
-- prepTime and cookTime are plain integers in minutes
-- tags: choose only from this list: italian, mexican, asian, american, mediterranean, kid-friendly, quick, healthy, vegetarian, weekend, no-cook, easy, new
-- ingredients: include every ingredient with a human-readable quantity string
-- estimatedCost is always 0
-- recipeDesc: plain text only, no HTML
-- Return ONLY the JSON object. Nothing else.`;
-
   try {
     // Abort after 45 seconds if no response
     const controller = new AbortController();
-    const timeout    = setTimeout(() => controller.abort(), 45000);
+    const timeout    = setTimeout(() => controller.abort(), 60000);
 
     let res;
     try {
-      res = await fetch("https://api.anthropic.com/v1/messages", {
+      res = await fetch("https://ltcukmqocxwfbvlsovnj.supabase.co/functions/v1/import-recipe", {
         method: "POST",
         signal: controller.signal,
         headers: {
-          "Content-Type":            "application/json",
-          "x-api-key":               ANTHROPIC_KEY,
-          "anthropic-version":       "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
+          "Content-Type":  "application/json",
+          "Authorization": `Bearer ${SB_KEY}`,
         },
         body: JSON.stringify({
-          model:      "claude-sonnet-4-20250514",
-          max_tokens: 4096,
-          messages:   [{ role: "user", content: prompt }],
+          url,
+          anthropicKey: ANTHROPIC_KEY,
         }),
       });
     } finally {
