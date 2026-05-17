@@ -572,7 +572,7 @@ async function deleteFeedbackFromDB(id) {
 // GEMINI RECIPE IMPORT
 // ═══════════════════════════════════════════════════════════════════
 
-const GEMINI_MODEL = "gemini-2.5-flash";
+const GEMINI_MODEL = "gemini-2.0-flash";
 
 // Gemini API key is stored in Supabase settings table, not hardcoded here.
 // This prevents it from being exposed in the public GitHub repository.
@@ -662,7 +662,7 @@ URL: ${url}
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
+        generationConfig: { temperature: 0.1, maxOutputTokens: 4096 },
       }),
     });
 
@@ -673,16 +673,13 @@ URL: ${url}
 
     const data = await res.json();
 
-    // Log the full response so we can see exactly what Gemini returned
-    console.log("Gemini full response:", JSON.stringify(data, null, 2));
-
-    // Check for safety blocks or prompt feedback
+    // Check for safety blocks
     const blockReason = data?.promptFeedback?.blockReason;
     if (blockReason) {
       throw new Error(`Gemini blocked this request: ${blockReason}. Try a different URL.`);
     }
 
-    // Check finish reason — RECITATION means the site blocked content copying
+    // Check finish reason
     const finishReason = data?.candidates?.[0]?.finishReason;
     if (finishReason && finishReason !== "STOP" && finishReason !== "MAX_TOKENS") {
       throw new Error(`Gemini stopped early (${finishReason}). The site may be blocking content access.`);
@@ -691,11 +688,8 @@ URL: ${url}
     const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
     if (!raw) {
-      console.warn("Gemini returned no text. Full response above.");
       throw new Error("Gemini returned an empty response. The site is likely blocking crawler access. Try a different recipe site.");
     }
-
-    console.log("Gemini raw text:", raw);
 
     // Gemini sometimes returns markdown fences, comments, or trailing commas
     // even when instructed not to. Clean all of it before parsing.
