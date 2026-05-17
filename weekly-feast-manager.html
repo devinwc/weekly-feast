@@ -572,24 +572,179 @@ async function deleteFeedbackFromDB(id) {
 // GEMINI RECIPE IMPORT
 // ═══════════════════════════════════════════════════════════════════
 
-const GEMINI_MODEL = "gemini-2.5-flash";
+// ═══════════════════════════════════════════════════════════════════
+// ANTHROPIC RECIPE IMPORT
+// API key is stored in Supabase settings table under "anthropic_api_key"
+// — never hardcoded here so it stays out of the public GitHub repo.
+// ═══════════════════════════════════════════════════════════════════
 
-// Gemini API key is stored in Supabase settings table, not hardcoded here.
-// This prevents it from being exposed in the public GitHub repository.
-let GEMINI_URL = null;
+let ANTHROPIC_KEY = null;
 
-async function loadGeminiKey() {
+async function loadAnthropicKey() {
   try {
-    const res = await sbFetch("GET", "settings", null, "?key=eq.gemini_api_key&select=value");
+    const res = await sbFetch("GET", "settings", null, "?key=eq.anthropic_api_key&select=value");
     if (res && res.length > 0) {
-      const key = res[0].value;
-      GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`;
+      ANTHROPIC_KEY = res[0].value;
       return true;
     }
   } catch (e) {
-    console.warn("Could not load Gemini key from Supabase:", e.message);
+    console.warn("Could not load Anthropic key from Supabase:", e.message);
   }
   return false;
+}
+
+async function importFromUrl() {
+  const url = document.getElementById("import-url").value.trim();
+  if (!url) { setImportStatus("Please paste a recipe URL first.", "error"); return; }
+
+  const btn = document.getElementById("import-btn");
+  btn.disabled = true;
+  btn.textContent = "Importing…";
+  setImportStatus("Fetching recipe — this takes about 10–15 seconds…", "info");
+
+  // Load Anthropic key from Supabase if not already loaded
+  if (!ANTHROPIC_KEY) {
+    setImportStatus("Loading API key…", "info");
+    const keyLoaded = await loadAnthropicKey();
+    if (!keyLoaded) {
+      setImportStatus(
+        "Recipe import isn't set up yet. Add your Anthropic API key to Supabase: settings table → key: anthropic_api_key",
+        "error"
+      );
+      btn.disabled = false;
+      btn.textContent = "Import Recipe";
+      return;
+    }
+  }
+
+  const prompt = `Please visit this URL and extract the recipe information from the page: ${url}
+
+Return ONLY a valid JSON object with no markdown, no code fences, no comments, and no extra text before or after. Just the raw JSON.
+
+Use exactly this structure:
+{
+  "name": "Full recipe name",
+  "mealType": "dinner",
+  "prepTime": 15,
+  "cookTime": 30,
+  "servings": 4,
+  "tags": ["italian", "kid-friendly"],
+  "recipeDesc": "A 1-2 sentence description of the dish",
+  "ingredients": [
+    { "name": "chicken thighs", "quantity": "2 lbs", "estimatedCost": 0 },
+    { "name": "taco seasoning", "quantity": "1 packet", "estimatedCost": 0 }
+  ]
+}
+
+Rules:
+- mealType must be exactly "breakfast", "lunch", or "dinner"
+- prepTime and cookTime are plain integers in minutes
+- tags: choose only from this list: italian, mexican, asian, american, mediterranean, kid-friendly, quick, healthy, vegetarian, weekend, no-cook, easy, new
+- ingredients: include every ingredient with a human-readable quantity string
+- estimatedCost is always 0
+- recipeDesc: plain text only, no HTML
+- Return ONLY the JSON object. Nothing else.`;
+
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type":            "application/json",
+        "x-api-key":               ANTHROPIC_KEY,
+        "anthropic-version":       "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify({
+        model:      "claude-sonnet-4-20250514",
+        max_tokens: 4096,
+        messages:   [{ role: "user", content: prompt }],
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err?.error?.message || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    const raw  = data?.content?.[0]?.text || "";
+
+    if (!raw) throw new Error("No response received. Please try again.");
+
+    // Clean up any accidental formatting
+    let clean = raw
+      .replace(/^```(?:json)?/im, "")
+      .replace(/```\s*$/m, "")
+      .replace(/\/\/.*$/gm, "")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/,\s*([}\]])/g, "$1")
+      .trim();
+
+    const jsonStart = clean.indexOf("{");
+    const jsonEnd   = clean.lastIndexOf("}");
+    if (jsonStart === -1 || jsonEnd === -1) {
+      throw new Error("Couldn't find recipe data in the response. The site may be blocking access or require a login.");
+    }
+    clean = clean.slice(jsonStart, jsonEnd + 1);
+
+    // Parse with truncation recovery
+    let recipe;
+    try {
+      recipe = JSON.parse(clean);
+    } catch (parseErr) {
+      const lastComma = clean.lastIndexOf(",");
+      if (lastComma > 0) {
+        try {
+          recipe = JSON.parse(clean.slice(0, lastComma) + "]}");
+        } catch {
+          throw new Error("Recipe data couldn't be parsed. Try a different URL.");
+        }
+      } else {
+        throw parseErr;
+      }
+    }
+
+    if (!recipe.name) throw new Error("No recipe name found. The site may be paywalled or unsupported.");
+
+    // Populate the form
+    document.getElementById("edit-name").value        = recipe.name || "";
+    document.getElementById("edit-type").value        = ["breakfast","lunch","dinner"].includes(recipe.mealType) ? recipe.mealType : "dinner";
+    document.getElementById("edit-prep").value        = parseInt(recipe.prepTime) || 0;
+    document.getElementById("edit-cook").value        = parseInt(recipe.cookTime) || 0;
+    document.getElementById("edit-cost").value        = 0;
+    document.getElementById("edit-tags").value        = (recipe.tags || []).join(", ");
+    document.getElementById("edit-recipe-link").value = url;
+    document.getElementById("edit-recipe-desc").value = recipe.recipeDesc || "";
+
+    const ings = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
+    renderIngredientRows(ings.map(i => ({
+      name:          i.name     || "",
+      quantity:      i.quantity || "",
+      estimatedCost: 0,
+    })));
+
+    document.getElementById("import-url").value = "";
+    const count = ings.length;
+    setImportStatus(
+      `✓ Imported "${recipe.name}" with ${count} ingredient${count !== 1 ? "s" : ""}. Review and hit Save when ready.`,
+      "success"
+    );
+
+  } catch (err) {
+    console.error("Import error:", err);
+    setImportStatus(`Import failed: ${err.message}`, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Import Recipe";
+  }
+}
+
+function setImportStatus(msg, type = "info") {
+  const el = document.getElementById("import-status");
+  if (!el) return;
+  const colors = { info:"var(--ink-soft)", success:"var(--green)", error:"var(--red)" };
+  el.textContent = msg;
+  el.style.color  = colors[type] || "var(--ink-soft)";
 }
 
 /**
@@ -1290,7 +1445,7 @@ function toast(msg, type="") {
 // ── Init ──────────────────────────────────────────────────────────
 (async () => {
   await loadAll();
-  await loadGeminiKey(); // load silently on startup so first import is instant
+  await loadAnthropicKey(); // load silently on startup so first import is instant
   renderMealTable();
   renderFeedback();
   renderExclusions();
