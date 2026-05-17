@@ -614,6 +614,7 @@ async function importFromUrl() {
     setImportStatus("Loading API key…", "info");
     const keyLoaded = await loadAnthropicKey();
     if (!keyLoaded) {
+      clearInterval(progressInterval);
       setImportStatus(
         "Recipe import isn't set up yet. Add your Anthropic API key to Supabase: settings table → key: anthropic_api_key",
         "error"
@@ -624,6 +625,8 @@ async function importFromUrl() {
     }
   }
 
+  console.log("Import: key ready, calling Edge Function…", ANTHROPIC_KEY ? "key loaded" : "NO KEY");
+
   try {
     // Abort after 45 seconds if no response
     const controller = new AbortController();
@@ -631,6 +634,7 @@ async function importFromUrl() {
 
     let res;
     try {
+      console.log("Import: firing fetch to Edge Function…");
       res = await fetch("https://ltcukmqocxwfbvlsovnj.supabase.co/functions/v1/import-recipe", {
         method: "POST",
         signal: controller.signal,
@@ -643,6 +647,7 @@ async function importFromUrl() {
           anthropicKey: ANTHROPIC_KEY,
         }),
       });
+      console.log("Import: Edge Function responded with status", res.status);
     } finally {
       clearTimeout(timeout);
     }
