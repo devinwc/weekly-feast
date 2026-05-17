@@ -602,6 +602,13 @@ async function importFromUrl() {
   btn.textContent = "Importing…";
   setImportStatus("Fetching recipe — this takes about 10–15 seconds…", "info");
 
+  // Animate the status message so the user knows it's still working
+  let dots = 0;
+  const progressInterval = setInterval(() => {
+    dots = (dots + 1) % 4;
+    setImportStatus("Fetching recipe" + ".".repeat(dots) + " (this can take up to 45 seconds)", "info");
+  }, 1500);
+
   // Load Anthropic key from Supabase if not already loaded
   if (!ANTHROPIC_KEY) {
     setImportStatus("Loading API key…", "info");
@@ -646,20 +653,30 @@ Rules:
 - Return ONLY the JSON object. Nothing else.`;
 
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type":            "application/json",
-        "x-api-key":               ANTHROPIC_KEY,
-        "anthropic-version":       "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
-      body: JSON.stringify({
-        model:      "claude-sonnet-4-20250514",
-        max_tokens: 4096,
-        messages:   [{ role: "user", content: prompt }],
-      }),
-    });
+    // Abort after 45 seconds if no response
+    const controller = new AbortController();
+    const timeout    = setTimeout(() => controller.abort(), 45000);
+
+    let res;
+    try {
+      res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type":            "application/json",
+          "x-api-key":               ANTHROPIC_KEY,
+          "anthropic-version":       "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({
+          model:      "claude-sonnet-4-20250514",
+          max_tokens: 4096,
+          messages:   [{ role: "user", content: prompt }],
+        }),
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!res.ok) {
       const err = await res.json();
@@ -731,9 +748,14 @@ Rules:
     );
 
   } catch (err) {
-    console.error("Import error:", err);
-    setImportStatus(`Import failed: ${err.message}`, "error");
+    if (err.name === "AbortError") {
+      setImportStatus("Request timed out after 45 seconds. The site may be slow or blocking access. Try a different URL.", "error");
+    } else {
+      console.error("Import error:", err);
+      setImportStatus(`Import failed: ${err.message}`, "error");
+    }
   } finally {
+    clearInterval(progressInterval);
     btn.disabled = false;
     btn.textContent = "Import Recipe";
   }
