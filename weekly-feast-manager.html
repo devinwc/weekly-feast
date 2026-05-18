@@ -743,18 +743,6 @@ function setImportStatus(msg, type = "info") {
   el.style.color  = colors[type] || "var(--ink-soft)";
 }
 
-
-function setImportStatus(msg, type = "info") {
-
-
-function setImportStatus(msg, type = "info") {
-  const el = document.getElementById("import-status");
-  if (!el) return;
-  const colors = { info: "var(--ink-soft)", success: "var(--green)", error: "var(--red)" };
-  el.textContent = msg;
-  el.style.color  = colors[type] || "var(--ink-soft)";
-}
-
 function switchTab(t) {
   document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
   document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));
