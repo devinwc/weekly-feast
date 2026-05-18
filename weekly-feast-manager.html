@@ -658,9 +658,21 @@ async function importFromUrl() {
     }
 
     const data = await res.json();
-    const raw  = data?.content?.[0]?.text || "";
+    console.log("Edge Function response:", JSON.stringify(data).slice(0, 500));
 
-    if (!raw) throw new Error("No response received. Please try again.");
+    // The Edge Function returns the raw Anthropic response.
+    // Anthropic format: { content: [{ type: "text", text: "..." }] }
+    // But also handle if Edge Function wrapped it: { data: { content: [...] } }
+    const raw = data?.content?.[0]?.text
+             || data?.data?.content?.[0]?.text
+             || data?.candidates?.[0]?.content?.parts?.[0]?.text
+             || data?.text
+             || "";
+
+    if (!raw) {
+      console.warn("Full Edge Function response:", JSON.stringify(data));
+      throw new Error("No response received. Please try again.");
+    }
 
     // Clean up any accidental formatting
     let clean = raw
