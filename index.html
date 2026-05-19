@@ -281,10 +281,11 @@
 
     <!-- Schedule + settings (shown before and after generate) -->
     <div class="settings-bar">
-      <label>
-        <input type="checkbox" id="toggle-leftovers" onchange="rebuildIfPlan()">
-        Use leftovers for next-day lunch
-      </label>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="btn btn-ghost" id="btn-prev-week" onclick="shiftWeek(-1)" style="padding:6px 10px;font-size:16px" title="Previous week">←</button>
+        <span id="week-nav-label" style="font-size:13px;font-weight:500;color:var(--ink);min-width:140px;text-align:center">This week</span>
+        <button class="btn btn-ghost" id="btn-next-week" onclick="shiftWeek(1)"  style="padding:6px 10px;font-size:16px" title="Next week">→</button>
+      </div>
       <div class="settings-divider"></div>
       <label style="gap:8px">
         Weekly budget:
@@ -448,8 +449,8 @@
 // DATA
 // ═══════════════════════════════════════════════════════════════════
 
-const NA          = "__NA__";
-const LEFTOVER    = "__LEFTOVER__";
+const NA = "__NA__";
+// LEFTOVER sentinel removed — leftovers feature removed per Step 11
 
 // ── Fallback meals (Step 10) ──────────────────────────────────────
 // Used on "chaos" days — no scoring, no rotation impact.
@@ -687,7 +688,6 @@ async function initApp() {
     loadConfirmedWeeksFromDB(),
   ]);
 
-  // Show offline only if ALL three loads failed (truly no connection)
   const anySucceeded = results.some(r => r === true);
   if (!anySucceeded && !navigator.onLine) {
     setSyncStatus("offline");
@@ -695,7 +695,6 @@ async function initApp() {
     setSyncStatus("synced");
   }
 
-  // If this is the very first load (Supabase is empty), seed the database
   const hasMealsInDB = await sbFetch("GET", "meals", null, "?select=id&limit=1");
   if (hasMealsInDB && hasMealsInDB.length === 0) {
     setSyncStatus("syncing");
@@ -703,6 +702,7 @@ async function initApp() {
     setSyncStatus(ok ? "synced" : "hidden");
   }
 
+  renderWeekNav();   // show correct week label on startup
   renderScheduleRow();
   renderHistory();
 }
@@ -733,10 +733,6 @@ function getBudget() {
   return parseFloat(document.getElementById("budget-input")?.value) || 150;
 }
 
-function getUseLeftovers() {
-  return document.getElementById("toggle-leftovers")?.checked || false;
-}
-
 // ═══════════════════════════════════════════════════════════════════
 // ROTATION / SCORING
 // ═══════════════════════════════════════════════════════════════════
@@ -753,7 +749,7 @@ function ctags(m)  { return (m.tags||[]).filter(t=>!OP_TAGS.has(t)); }
 function buildRotMap(history) {
   const map={};
   for(const p of history) for(const d of p.days||[]) for(const [,mid] of Object.entries(d.meals||{})) {
-    if(!mid||mid===NA||mid===LEFTOVER||FB_LOOKUP[mid]) continue;
+    if(!mid||mid===NA||FB_LOOKUP[mid]) continue;
     if(!map[mid]||d.date>map[mid]) map[mid]=d.date;
   }
   return map;
@@ -819,13 +815,18 @@ function pickBestFallback(type) {
 function pickOne(type, usedIds, pace, rotMap, wCtx, remainingBudget, totalBudget) {
   if (pace === "chaos") return pickBestFallback(type);
 
+  // Dinners track usedIds to prevent repeats within the week.
+  // Breakfasts and lunches are allowed to repeat freely — families commonly
+  // eat the same breakfast or lunch multiple days in a row.
+  const preventRepeat = type === "dinner";
+
   let pool = MEALS.filter(m =>
     m.mealType===type &&
     !thumbedDown.has(m.id) &&
-    !usedIds.has(m.id) &&
+    !(preventRepeat && usedIds.has(m.id)) &&
     !(dSince(rotMap[m.id]||m.lastServed||null) < MIN_GAP)
   );
-  if(!pool.length) pool=MEALS.filter(m=>m.mealType===type&&!thumbedDown.has(m.id)&&!usedIds.has(m.id));
+  if(!pool.length) pool=MEALS.filter(m=>m.mealType===type&&!thumbedDown.has(m.id)&&!(preventRepeat&&usedIds.has(m.id)));
   if(!pool.length) pool=MEALS.filter(m=>m.mealType===type&&!thumbedDown.has(m.id));
 
   // Score with budget context
@@ -860,9 +861,58 @@ function pickOne(type, usedIds, pace, rotMap, wCtx, remainingBudget, totalBudget
 // PLAN GENERATION
 // ═══════════════════════════════════════════════════════════════════
 
-function monday() {
+// ── Week navigation state ─────────────────────────────────────────
+// 0 = this week, 1 = next week, 2 = two weeks out, etc.
+let weekOffset = 0;
+
+// All generated plans stored by weekStartDate — survives navigation
+const weekPlans = {};
+
+function monday(offset = 0) {
   const d=new Date(), day=d.getDay();
-  d.setDate(d.getDate()+(day===0?-6:1-day)); d.setHours(0,0,0,0); return d;
+  d.setDate(d.getDate()+(day===0?-6:1-day) + (offset*7));
+  d.setHours(0,0,0,0); return d;
+}
+
+function shiftWeek(dir) {
+  // Save current plan before navigating away
+  if (currentPlan) weekPlans[currentPlan.weekStartDate] = currentPlan;
+
+  weekOffset = Math.max(0, weekOffset + dir);
+
+  const mon = monday(weekOffset);
+  const key = mon.toISOString().split("T")[0];
+
+  if (weekPlans[key]) {
+    currentPlan = weekPlans[key];
+    renderWeekNav();
+    renderPlan(currentPlan);
+    renderGrocery(currentPlan);
+    const alreadyConfirmed = confirmedWeeks.some(w => w.weekId === currentPlan.id);
+    document.getElementById("confirm-bar").style.display = alreadyConfirmed ? "none" : "flex";
+    document.getElementById("plan-content").style.display = "block";
+    document.getElementById("empty-state").style.display = "none";
+  } else {
+    currentPlan = null;
+    renderWeekNav();
+    document.getElementById("plan-content").style.display = "none";
+    document.getElementById("empty-state").style.display = "block";
+    document.getElementById("confirm-bar").style.display = "none";
+  }
+}
+
+function renderWeekNav() {
+  const mon = monday(weekOffset);
+  const sun = new Date(mon); sun.setDate(mon.getDate()+6);
+  const fmt = d => d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
+  const label = weekOffset === 0 ? "This week"
+              : weekOffset === 1 ? "Next week"
+              : `In ${weekOffset} weeks`;
+  document.getElementById("week-nav-label").textContent =
+    `${label} · ${fmt(mon)}–${fmt(sun)}`;
+  document.getElementById("week-label").textContent =
+    `${fmt(mon)} – ${fmt(sun)}`;
+  document.getElementById("btn-prev-week").disabled = weekOffset === 0;
 }
 
 function resolveSlot(day, type) {
@@ -871,36 +921,30 @@ function resolveSlot(day, type) {
 }
 
 function resolveDisplayMeal(day, type) {
-  // Returns { meal, isFallback, isLeftover, isManual, isNA }
   const mid = resolveSlot(day, type);
-  if (!mid) return { meal:null, isFallback:false, isLeftover:false, isManual:false, isNA:false };
-  if (mid === NA)       return { meal:null, isFallback:false, isLeftover:false, isManual:false, isNA:true };
-  if (mid === LEFTOVER) {
-    // Resolve to yesterday's dinner name
-    return { meal:null, leftoverName: day._leftoverSource || "Yesterday's dinner", isFallback:false, isLeftover:true, isManual:false, isNA:false };
-  }
-  if (FB_LOOKUP[mid]) return { meal:FB_LOOKUP[mid], isFallback:true, isLeftover:false, isManual:false, isNA:false };
+  if (!mid) return { meal:null, isFallback:false, isManual:false, isNA:false };
+  if (mid === NA) return { meal:null, isFallback:false, isManual:false, isNA:true };
+  if (FB_LOOKUP[mid]) return { meal:FB_LOOKUP[mid], isFallback:true, isManual:false, isNA:false };
   const isManual = !!(day.overrides&&day.overrides[type]);
-  return { meal: ML[mid]||null, isFallback:false, isLeftover:false, isManual, isNA:false };
+  return { meal: ML[mid]||null, isFallback:false, isManual, isNA:false };
 }
 
 function genPlan(existingDays=null) {
   const schedule     = getSchedule();
-  const useLeftovers = getUseLeftovers();
-  const totalBudget  = getBudget();           // read from input
-  let   remaining    = totalBudget;           // decremented as slots are filled
+  const totalBudget  = getBudget();
+  let   remaining    = totalBudget;
   const history      = JSON.parse(localStorage.getItem("wf_plan_history")||"[]");
   const rotMap       = buildRotMap(history);
   const wCtx         = { c:new Set(), p:new Set() };
-  const mon          = monday();
-  const usedIds      = new Set();
+  const mon          = monday(weekOffset);  // uses current week offset
+  const usedIds      = new Set();           // dinner-only repeat prevention
 
-  // Pre-seed from locked slots and subtract their costs from remaining
+  // Pre-seed from locked slots
   if(existingDays) {
     for(const day of existingDays) for(const type of TYPES) {
       const mid = resolveSlot(day,type);
-      if(mid&&mid!==NA&&mid!==LEFTOVER&&!FB_LOOKUP[mid]) {
-        usedIds.add(mid);
+      if(mid&&mid!==NA&&!FB_LOOKUP[mid]) {
+        if(type==="dinner") usedIds.add(mid);
         remaining -= (ML[mid]?.totalCostEstimate || 0);
         const m=ML[mid]; if(m&&type==="dinner"){ ctags(m).forEach(t=>wCtx.c.add(t)); const p=proto(m);if(p)wCtx.p.add(p); }
       }
@@ -939,24 +983,14 @@ function genPlan(existingDays=null) {
       const cur = resolveSlot({meals,overrides}, type);
       if(cur!==null&&cur!==undefined) continue;
 
-      if(type==="lunch" && useLeftovers && i>0) {
-        const prev = days[i-1];
-        if(prev && !prev.isChaosDay) {
-          const prevDinner = resolveSlot(prev,"dinner");
-          const isRealDinner = prevDinner && prevDinner!==NA && prevDinner!==LEFTOVER && !FB_LOOKUP[prevDinner];
-          if(isRealDinner) { meals[type]=LEFTOVER; continue; }
-        }
-      }
-
       if(!existingDays&&type==="dinner"&&name==="Saturday"&&newMeal) {
         meals[type]=newMeal.id; continue;
       }
 
-      // Pass current remaining budget into picker
       const picked = pickOne(type, usedIds, pace, rotMap, wCtx, remaining, totalBudget);
       meals[type] = picked ? picked.id : null;
       if(picked && !FB_LOOKUP[picked.id]) {
-        usedIds.add(picked.id);
+        if(type==="dinner") usedIds.add(picked.id); // only dinners track repeats
         remaining -= (picked.totalCostEstimate || 0);
         if(type==="dinner"){ ctags(picked).forEach(t=>wCtx.c.add(t)); const p=proto(picked);if(p)wCtx.p.add(p); }
       }
@@ -965,19 +999,9 @@ function genPlan(existingDays=null) {
     return { date:dateStr, dayOfWeek:name, pace, meals, overrides };
   });
 
-  // Annotate leftover source names
-  days.forEach((day,i) => {
-    if(i>0 && useLeftovers && days[i].meals.lunch===LEFTOVER) {
-      const prev = days[i-1];
-      const prevDinnerId = resolveSlot(prev,"dinner");
-      const prevMeal = prevDinnerId ? (ML[prevDinnerId]||FB_LOOKUP[prevDinnerId]) : null;
-      day._leftoverSource = prevMeal ? prevMeal.name : "Yesterday's dinner";
-    }
-  });
-
   const total = days.reduce((s,d)=>s+TYPES.reduce((ss,t)=>{
     const mid=resolveSlot(d,t);
-    if(!mid||mid===NA||mid===LEFTOVER) return ss;
+    if(!mid||mid===NA) return ss;
     const m=ML[mid]||FB_LOOKUP[mid]; return ss+(m?m.totalCostEstimate:0);
   },0),0);
 
@@ -991,7 +1015,9 @@ function genPlan(existingDays=null) {
     days,
   };
 
-  const updated=[...history,plan].slice(-8);
+  // Save to week plans store and history
+  weekPlans[plan.weekStartDate] = plan;
+  const updated=[...history,plan].slice(-12); // keep more history for multi-week
   localStorage.setItem("wf_plan_history",JSON.stringify(updated));
   return plan;
 }
@@ -1010,10 +1036,11 @@ function recalc() {
   if(!currentPlan) return;
   const t=currentPlan.days.reduce((s,d)=>s+TYPES.reduce((ss,type)=>{
     const mid=resolveSlot(d,type);
-    if(!mid||mid===NA||mid===LEFTOVER) return ss;
+    if(!mid||mid===NA) return ss;
     const m=ML[mid]||FB_LOOKUP[mid]; return ss+(m?m.totalCostEstimate:0);
   },0),0);
   currentPlan.projectedWeeklyTotal=Math.round(t*100)/100;
+  weekPlans[currentPlan.weekStartDate]=currentPlan;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1033,8 +1060,7 @@ function groceryList(plan) {
   const raw={};
   for(const day of plan.days) for(const type of TYPES) {
     const mid=resolveSlot(day,type);
-    // Skip NA, leftover sentinel, and fallback meals (no ingredients to add)
-    if(!mid||mid===NA||mid===LEFTOVER||FB_LOOKUP[mid]) continue;
+    if(!mid||mid===NA||FB_LOOKUP[mid]) continue;
     const meal=ML[mid]; if(!meal||!meal.ingredients) continue;
     for(const ing of meal.ingredients) {
       const key=norm(ing.name);
@@ -1158,11 +1184,10 @@ function renderPlan(plan) {
   } else { banner.style.display="none"; }
 
   document.getElementById("day-grid").innerHTML = plan.days.map((day,di) => {
-    const hasLeftover = Object.values(day.meals).includes(LEFTOVER);
-    const cardClass   = day.isChaosDay ? "day-card is-chaos" : hasLeftover ? "day-card is-leftover-day" : "day-card";
+    const cardClass = day.isChaosDay ? "day-card is-chaos" : "day-card";
 
     const slotsHTML = TYPES.map(type => {
-      const { meal, isFallback, isLeftover, leftoverName, isManual, isNA } = resolveDisplayMeal(day, type);
+      const { meal, isFallback, isManual, isNA } = resolveDisplayMeal(day, type);
       const mid = resolveSlot(day, type);
       const isNew = meal && newIds.has(meal.id);
       const isTD  = meal && thumbedDown.has(meal.id);
@@ -1173,19 +1198,7 @@ function renderPlan(plan) {
         body = `<div class="meal-name-row"><span class="meal-na">🍴 Eating out</span></div>
                 <div class="meal-actions"><button class="slot-btn" title="Clear" onclick="clearNA(${di},'${type}')">✕</button></div>`;
 
-      } else if (isLeftover) {
-        // Leftover lunch — show what it is, allow override
-        body = `<div class="meal-name-row">
-                  <span class="meal-name is-leftover">♻️ ${leftoverName||"Yesterday's dinner"}</span>
-                </div>
-                <div class="meal-actions">
-                  <span class="badge badge-leftover">Leftover</span>
-                  <span style="flex:1"></span>
-                  <button class="slot-btn regen" title="Pick a fresh lunch instead" onclick="clearLeftover(${di},'${type}')">↺</button>
-                </div>`;
-
       } else if (isFallback) {
-        // Fallback / chaos meal
         body = `<div class="meal-name-row"><span class="meal-name is-fallback">${meal.name}</span></div>
                 <div class="meal-actions">
                   <span class="badge badge-fallback">Fallback</span>
@@ -1270,16 +1283,14 @@ function handleGenerate() {
   btn.innerHTML='<span class="spinner"></span> Generating…'; btn.disabled=true;
   setTimeout(()=>{
     currentPlan=genPlan(); checked.clear();
-    document.getElementById("week-label").textContent=fmtRange(currentPlan);
+    weekPlans[currentPlan.weekStartDate] = currentPlan;
     document.getElementById("empty-state").style.display="none";
     document.getElementById("plan-content").style.display="block";
     document.getElementById("tabs").style.display="flex";
     document.getElementById("btn-add-meal").style.display="inline-flex";
-
-    // Show confirm bar only if this week hasn't already been confirmed
+    renderWeekNav();
     const alreadyConfirmed = confirmedWeeks.some(w => w.weekId === currentPlan.id);
     document.getElementById("confirm-bar").style.display = alreadyConfirmed ? "none" : "flex";
-
     renderPlan(currentPlan); renderGrocery(currentPlan); switchTab("plan");
     btn.innerHTML="↺ Regenerate"; btn.disabled=false;
   },380);
@@ -1304,13 +1315,6 @@ function uncheckAll() {
 }
 
 function handleRegen(di,type) { regenSlot(di,type); renderPlan(currentPlan); renderGrocery(currentPlan); }
-
-function clearLeftover(di, type) {
-  // Replace LEFTOVER sentinel with a fresh auto-pick
-  currentPlan.days[di].meals[type] = null;
-  regenSlot(di, type);
-  renderPlan(currentPlan); renderGrocery(currentPlan);
-}
 
 async function toggleTD(id) {
   thumbedDown.has(id) ? thumbedDown.delete(id) : thumbedDown.add(id);
@@ -1349,7 +1353,7 @@ function applyOverride(di,type,name) {
 function openModal(di,type) {
   const day=currentPlan.days[di];
   const mid=resolveSlot(day,type);
-  const meal=mid&&mid!==NA&&mid!==LEFTOVER&&!FB_LOOKUP[mid]?ML[mid]:null;
+  const meal=mid&&mid!==NA&&!FB_LOOKUP[mid]?ML[mid]:null;
   document.getElementById("action-subtitle").textContent=`${day.dayOfWeek} · ${type.charAt(0).toUpperCase()+type.slice(1)}`;
   showMenu(di,type,meal);
   document.getElementById("modal-action").classList.add("open");
@@ -1545,11 +1549,10 @@ function confirmWeek() {
  * Resolves a display name for any slot type, handling all special values.
  */
 function resolveMealName(day, type, mid) {
-  if (!mid)              return "—";
-  if (mid === NA)        return "Eating out";
-  if (mid === LEFTOVER)  return day._leftoverSource ? `↩ ${day._leftoverSource}` : "↩ Leftovers";
+  if (!mid)       return "—";
+  if (mid === NA) return "Eating out";
   const fb = FB_LOOKUP[mid];
-  if (fb)                return `⚡ ${fb.name}`;
+  if (fb)         return `⚡ ${fb.name}`;
   if (day.overrides && day.overrides[type]) return `✏️ ${day.overrides[type].name}`;
   return ML[mid]?.name || mid;
 }
@@ -1571,7 +1574,7 @@ async function doConfirmWeek() {
   for (const day of currentPlan.days) {
     for (const type of TYPES) {
       const mid = resolveSlot(day, type);
-      if (mid && mid !== NA && mid !== LEFTOVER && !FB_LOOKUP[mid]) {
+      if (mid && mid !== NA && !FB_LOOKUP[mid]) {
         servedIds.add(mid);
       }
     }
@@ -1631,6 +1634,16 @@ async function doConfirmWeek() {
 // ═══════════════════════════════════════════════════════════════════
 
 function renderHistory() {
+  // Auto-prune confirmed weeks older than 2 months
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - 2);
+  const cutoffStr = cutoff.toISOString().split("T")[0];
+  const pruned = confirmedWeeks.filter(w => w.weekStartDate >= cutoffStr);
+  if (pruned.length !== confirmedWeeks.length) {
+    confirmedWeeks = pruned;
+    saveConfirmedWeekToDB && localStorage.setItem("wf_confirmed_cache", JSON.stringify(confirmedWeeks));
+  }
+
   const count = confirmedWeeks.length;
   document.getElementById("history-week-count").textContent = count;
   const el = document.getElementById("history-content");
@@ -1653,7 +1666,6 @@ function renderHistory() {
         const name = slot?.name || "—";
         const cls  = !slot?.id          ? ""
                    : slot.id === NA     ? "is-na"
-                   : slot.id === LEFTOVER ? "is-leftover"
                    : FB_LOOKUP[slot.id] ? "is-fallback"
                    : day.isChaosDay     ? "is-chaos"
                    : "";
