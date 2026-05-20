@@ -265,7 +265,49 @@
       <span id="sync-status" style="font-size:11px;font-weight:500;letter-spacing:.04em;color:var(--ink-soft);transition:color .3s"></span>
       <a href="weekly-feast-manager.html" class="btn btn-ghost" style="text-decoration:none">⚙ Manage Meals</a>
       <button class="btn btn-outline" id="btn-add-meal" style="display:none" onclick="switchTab('add')">+ Add Meal</button>
-      <button class="btn btn-outline" id="btn-export" style="display:none" onclick="exportWeekAsImage()">⬇ Save Image</button>
+      <!-- Split export button -->
+      <div id="btn-export" style="display:none;position:relative">
+        <div style="display:inline-flex;border:1.5px solid var(--rule);border-radius:var(--radius);overflow:visible;background:var(--paper)">
+          <button class="btn btn-outline" onclick="exportWeekAsImage(false)"
+            style="border:none;border-radius:0;border-top-left-radius:calc(var(--radius) - 2px);border-bottom-left-radius:calc(var(--radius) - 2px);padding-right:12px">
+            ⬇ Save Image
+          </button>
+          <button id="export-dropdown-btn" class="btn btn-outline" onclick="toggleExportMenu(event)"
+            style="border:none;border-left:1.5px solid var(--rule);border-radius:0;border-top-right-radius:calc(var(--radius) - 2px);border-bottom-right-radius:calc(var(--radius) - 2px);padding:9px 10px;font-size:11px"
+            title="More export options">▾</button>
+        </div>
+        <div id="export-menu" style="display:none;position:absolute;top:calc(100% + 6px);right:0;background:var(--paper);border:1.5px solid var(--rule);border-radius:var(--radius);box-shadow:var(--shadow);z-index:50;min-width:200px;overflow:hidden">
+          <button onclick="exportWeekAsImage(false);closeExportMenu()"
+            style="display:flex;align-items:center;gap:10px;width:100%;padding:11px 16px;border:none;background:transparent;font-family:var(--sans);font-size:13px;font-weight:500;color:var(--ink);cursor:pointer;text-align:left"
+            onmouseover="this.style.background='var(--cream)'" onmouseout="this.style.background='transparent'">
+            <span style="font-size:15px">&#x1F37D;&#xFE0F;</span>
+            <div>
+              <div>Meals only</div>
+              <div style="font-size:11px;color:var(--ink-soft);font-weight:400">Week grid, no grocery list</div>
+            </div>
+          </button>
+          <div style="height:1px;background:var(--rule);margin:0 12px"></div>
+          <button onclick="exportWeekAsImage(false,true);closeExportMenu()"
+            style="display:flex;align-items:center;gap:10px;width:100%;padding:11px 16px;border:none;background:transparent;font-family:var(--sans);font-size:13px;font-weight:500;color:var(--ink);cursor:pointer;text-align:left"
+            onmouseover="this.style.background='var(--cream)'" onmouseout="this.style.background='transparent'">
+            <span style="font-size:15px">&#x1F319;</span>
+            <div>
+              <div>Dinners only</div>
+              <div style="font-size:11px;color:var(--ink-soft);font-weight:400">Just the 7 dinners for the week</div>
+            </div>
+          </button>
+          <div style="height:1px;background:var(--rule);margin:0 12px"></div>
+          <button onclick="exportWeekAsImage(true);closeExportMenu()"
+            style="display:flex;align-items:center;gap:10px;width:100%;padding:11px 16px;border:none;background:transparent;font-family:var(--sans);font-size:13px;font-weight:500;color:var(--ink);cursor:pointer;text-align:left"
+            onmouseover="this.style.background='var(--cream)'" onmouseout="this.style.background='transparent'">
+            <span style="font-size:15px">&#x1F6D2;</span>
+            <div>
+              <div>Meals + Grocery</div>
+              <div style="font-size:11px;color:var(--ink-soft);font-weight:400">Full plan with shopping list</div>
+            </div>
+          </button>
+        </div>
+      </div>
       <button class="btn btn-primary" id="btn-generate" onclick="handleGenerate()">✦ New Plan</button>
     </div>
   </header>
@@ -355,6 +397,21 @@
   <div class="panel" id="panel-add">
     <div class="section-title" style="margin-bottom:20px">Add a Meal</div>
     <div class="add-meal-form">
+
+      <!-- ── URL Import ── -->
+      <div style="margin-bottom:24px;padding:16px 18px;background:var(--amber-lt);border:1.5px solid #FDE68A;border-radius:var(--radius);">
+        <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--amber);margin-bottom:8px">✨ Import from URL</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="new-import-url" type="url" placeholder="Paste any recipe URL…"
+            style="flex:1;background:var(--paper)"
+            onkeydown="if(event.key==='Enter') importFromUrlNew()">
+          <button class="btn btn-primary" id="new-import-btn" onclick="importFromUrlNew()" style="white-space:nowrap;flex-shrink:0">
+            Import Recipe
+          </button>
+        </div>
+        <div id="new-import-status" style="font-size:12px;margin-top:8px;color:var(--ink-soft);min-height:18px"></div>
+      </div>
+
       <div class="form-group">
         <label class="form-label">Meal Name *</label>
         <input class="form-input" id="new-name" placeholder="e.g. Chicken Stir-Fry">
@@ -686,7 +743,7 @@ function showLatestConfirmedOnHome() {
 
   const latest = confirmedWeeks[0]; // already sorted newest-first
   document.getElementById("btn-add-meal").style.display = "inline-flex";
-  document.getElementById("btn-export").style.display = "inline-flex";
+  document.getElementById("btn-export").style.display = "";
   document.getElementById("empty-state").style.display = "none";
   document.getElementById("plan-content").style.display = "block";
   document.getElementById("confirm-bar").style.display = "none";
@@ -987,7 +1044,7 @@ function shiftWeek(dir) {
     document.getElementById("confirm-bar").style.display = alreadyConfirmed ? "none" : "flex";
     document.getElementById("plan-content").style.display = "block";
     document.getElementById("empty-state").style.display = "none";
-    document.getElementById("btn-export").style.display = "inline-flex";
+    document.getElementById("btn-export").style.display = "";
   } else {
     currentPlan = null;
     renderWeekNav();
@@ -1391,7 +1448,7 @@ function handleGenerate() {
     document.getElementById("empty-state").style.display="none";
     document.getElementById("plan-content").style.display="block";
     document.getElementById("btn-add-meal").style.display="inline-flex";
-    document.getElementById("btn-export").style.display="inline-flex";
+    document.getElementById("btn-export").style.display="";
     renderWeekNav();
     const alreadyConfirmed = confirmedWeeks.some(w => w.weekId === currentPlan.id);
     document.getElementById("confirm-bar").style.display = alreadyConfirmed ? "none" : "flex";
@@ -1583,7 +1640,8 @@ async function submitNewMeal() {
 }
 
 function clearMealForm() {
-  ["new-name","new-recipe-link","new-tags"].forEach(id=>document.getElementById(id).value="");
+  ["new-name","new-recipe-link","new-tags","new-import-url"].forEach(id=>document.getElementById(id).value="");
+  document.getElementById("new-import-status").textContent = "";
   document.getElementById("new-type").value="dinner";
   document.getElementById("new-kid").value="3";
   document.getElementById("new-prep").value="10";
@@ -1877,12 +1935,176 @@ function deleteConfirmedWeek(weekId) {
 // ── Init ──────────────────────────────────────────────────────────
 
 // ═══════════════════════════════════════════════════════════════════
+// RECIPE IMPORT (Add Meal panel)
+// Re-uses the same Supabase Edge Function as weekly-feast-manager.html.
+// The Anthropic API key is fetched from Supabase settings at runtime —
+// never hardcoded — so both files always use the same key.
+// ═══════════════════════════════════════════════════════════════════
+
+let _importAnthropicKey = null;
+
+async function _loadImportKey() {
+  if (_importAnthropicKey) return true;
+  try {
+    const res = await sbFetch("GET", "settings", null, "?key=eq.anthropic_api_key&select=value");
+    if (res && res.length > 0) { _importAnthropicKey = res[0].value; return true; }
+  } catch (e) { console.warn("Could not load Anthropic key:", e.message); }
+  return false;
+}
+
+function _setImportStatus(msg, type = "info") {
+  const el = document.getElementById("new-import-status");
+  if (!el) return;
+  const colors = { info: "var(--ink-soft)", success: "var(--green)", error: "var(--red)" };
+  el.textContent = msg;
+  el.style.color  = colors[type] || "var(--ink-soft)";
+}
+
+async function importFromUrlNew() {
+  const url = document.getElementById("new-import-url").value.trim();
+  if (!url) { _setImportStatus("Please paste a recipe URL first.", "error"); return; }
+
+  const btn = document.getElementById("new-import-btn");
+  btn.disabled = true;
+  btn.textContent = "Importing…";
+  _setImportStatus("Fetching recipe — this takes about 15–30 seconds…", "info");
+
+  let dots = 0;
+  const ticker = setInterval(() => {
+    dots = (dots + 1) % 4;
+    _setImportStatus("Fetching recipe" + ".".repeat(dots) + " (can take up to 60 seconds)", "info");
+  }, 1500);
+
+  if (!_importAnthropicKey) {
+    _setImportStatus("Loading API key…", "info");
+    const ok = await _loadImportKey();
+    if (!ok) {
+      clearInterval(ticker);
+      _setImportStatus(
+        "Recipe import isn't set up yet. Add your Anthropic API key in Supabase: settings → anthropic_api_key",
+        "error"
+      );
+      btn.disabled = false; btn.textContent = "Import Recipe";
+      return;
+    }
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout    = setTimeout(() => controller.abort(), 60000);
+    let res;
+    try {
+      res = await fetch("https://ltcukmqocxwfbvlsovnj.supabase.co/functions/v1/import-recipe", {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type":  "application/json",
+          "Authorization": `Bearer ${SB_KEY}`,
+        },
+        body: JSON.stringify({ url, anthropicKey: _importAnthropicKey }),
+      });
+    } finally { clearTimeout(timeout); }
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err?.error?.message || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    const raw  = data?.content?.[0]?.text
+              || data?.data?.content?.[0]?.text
+              || data?.text || "";
+
+    if (!raw) throw new Error("No response received. Please try again.");
+
+    let clean = raw
+      .replace(/^```(?:json)?/im, "").replace(/```\s*$/m, "")
+      .replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/,\s*([}\]])/g, "$1").trim();
+
+    const j0 = clean.indexOf("{"), j1 = clean.lastIndexOf("}");
+    if (j0 === -1 || j1 === -1) throw new Error("Couldn't parse recipe data. The site may block access or require a login.");
+    clean = clean.slice(j0, j1 + 1);
+
+    let recipe;
+    try {
+      recipe = JSON.parse(clean);
+    } catch {
+      const lc = clean.lastIndexOf(",");
+      if (lc > 0) { try { recipe = JSON.parse(clean.slice(0, lc) + "]}"); } catch { throw new Error("Recipe data couldn't be parsed. Try a different URL."); } }
+      else throw new Error("Recipe data couldn't be parsed. Try a different URL.");
+    }
+
+    if (!recipe.name) throw new Error("No recipe name found. The site may be paywalled or unsupported.");
+
+    // Populate the Add Meal form fields
+    document.getElementById("new-name").value        = recipe.name || "";
+    document.getElementById("new-recipe-link").value = url;
+    document.getElementById("new-prep").value        = parseInt(recipe.prepTime) || 0;
+    document.getElementById("new-cook").value        = parseInt(recipe.cookTime) || 0;
+    document.getElementById("new-tags").value        = (recipe.tags || []).join(", ");
+    const t = document.getElementById("new-type");
+    if (["breakfast","lunch","dinner"].includes(recipe.mealType)) t.value = recipe.mealType;
+
+    // Rebuild ingredient rows
+    const ingList = document.getElementById("new-ingredient-list");
+    ingList.innerHTML = "";
+    const ings = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
+    if (ings.length === 0) {
+      // Always leave at least one blank row
+      ings.push({ name: "", quantity: "", estimatedCost: 0 });
+    }
+    ings.forEach(i => {
+      const row = document.createElement("div");
+      row.className = "ingredient-row";
+      row.innerHTML = `<input class="form-input" placeholder="Ingredient name" data-ing="name" value="${(i.name||"").replace(/"/g,"&quot;")}">
+        <input class="form-input qty" placeholder="Qty" data-ing="qty" value="${(i.quantity||"").replace(/"/g,"&quot;")}">
+        <input class="form-input qty" placeholder="$" type="number" step="0.01" data-ing="cost" value="${parseFloat(i.estimatedCost)||""}">
+        <button class="rm-ing" onclick="rmIngRow(this)">×</button>`;
+      ingList.appendChild(row);
+    });
+
+    document.getElementById("new-import-url").value = "";
+    _setImportStatus(
+      `✓ Imported "${recipe.name}" with ${ings.length} ingredient${ings.length !== 1 ? "s" : ""}. Review and hit Save Meal when ready.`,
+      "success"
+    );
+
+  } catch (err) {
+    if (err.name === "AbortError") {
+      _setImportStatus("Timed out. The site may be slow or blocking access. Try a different URL.", "error");
+    } else {
+      _setImportStatus(`Import failed: ${err.message}`, "error");
+    }
+  } finally {
+    clearInterval(ticker);
+    btn.disabled = false;
+    btn.textContent = "Import Recipe";
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // EXPORT — WEEK AS PNG IMAGE
 // Draws a clean, self-contained meal plan card using Canvas API.
 // No external libraries required.
 // ═══════════════════════════════════════════════════════════════════
 
-function exportWeekAsImage() {
+function toggleExportMenu(e) {
+  e.stopPropagation();
+  const menu = document.getElementById("export-menu");
+  const isOpen = menu.style.display === "block";
+  menu.style.display = isOpen ? "none" : "block";
+  if (!isOpen) {
+    const close = () => { closeExportMenu(); document.removeEventListener("click", close); };
+    setTimeout(() => document.addEventListener("click", close), 0);
+  }
+}
+function closeExportMenu() {
+  const menu = document.getElementById("export-menu");
+  if (menu) menu.style.display = "none";
+}
+
+function exportWeekAsImage(includeGrocery = true, dinnersOnly = false) {
   // ── Gather data ──────────────────────────────────────────────────
   // Prefer currentPlan (live plan); fall back to latest confirmed week
   let planDays  = null;
@@ -1967,7 +2189,7 @@ function exportWeekAsImage() {
     ? 56 + groceryCats.length * 28 + totalGroceryItems * 22 + 32
     : 0;
 
-  const H = 132 + 320 + (groceryH ? groceryH + 32 : 0) + 72;
+  const H = 132 + cardHforH + 36 + (includeGrocery && groceryH ? groceryH + 32 : 0) + 72;
 
   const canvas = document.createElement("canvas");
   canvas.width  = W * DPR;
@@ -2055,16 +2277,23 @@ function exportWeekAsImage() {
   const dayHeaderH = 32;
   const slotH      = 72;  // per meal slot (breakfast/lunch/dinner)
   const cardH      = dayHeaderH + slotH * 3;
-  const TYPES_EXP  = ["breakfast", "lunch", "dinner"];
+  // Effective card height for canvas sizing (dinnersOnly uses 1 tall slot)
+  const cardHforH  = dinnersOnly ? (dayHeaderH + 96) : cardH;
+  const TYPES_EXP  = dinnersOnly ? ["dinner"] : ["breakfast", "lunch", "dinner"];
   const TYPE_LABEL = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner" };
   const PACE_COLOR = { busy: C.amber, relaxed: C.green, chaos: C.red, normal: C.inkSoft };
+
+  // Dinners-only uses taller single-slot cards with bigger text
+  const slotHeff   = dinnersOnly ? 96 : slotH;
+  const cardHeff   = dayHeaderH + slotHeff * TYPES_EXP.length;
+  const nameFontSz = dinnersOnly ? "14px" : "12px";
 
   planDays.forEach((day, i) => {
     const cx = PAD + i * (COL_W + 12);
     const cy = gridTop;
 
     // Card background
-    roundRect(cx, cy, COL_W, cardH, 8, C.paper, C.rule);
+    roundRect(cx, cy, COL_W, cardHeff, 8, C.paper, C.rule);
 
     // Day header band
     roundRect(cx, cy, COL_W, dayHeaderH, 8, C.rule, null);
@@ -2085,23 +2314,25 @@ function exportWeekAsImage() {
     }
 
     TYPES_EXP.forEach((type, ti) => {
-      const sy = cy + dayHeaderH + ti * slotH;
+      const sy = cy + dayHeaderH + ti * slotHeff;
 
-      // Type label
-      text(TYPE_LABEL[type], cx + 10, sy + 16,
-        "500 9px system-ui, sans-serif", C.inkSoft);
+      // Type label (hide for dinners-only — it's implied)
+      if (!dinnersOnly) {
+        text(TYPE_LABEL[type], cx + 10, sy + 16,
+          "500 9px system-ui, sans-serif", C.inkSoft);
+      }
 
       // Meal name — wrap up to 2 lines
       const name = slotName(day, type);
+      const nameTopOffset = dinnersOnly ? 28 : 16;
       if (!name) {
-        text("—", cx + 10, sy + 34, "400 11px system-ui, sans-serif", C.rule);
+        text("—", cx + 10, sy + nameTopOffset + 18, "400 11px system-ui, sans-serif", C.rule);
       } else {
         const maxNameW = COL_W - 20;
-        ctx.font = "500 12px system-ui, sans-serif";
+        ctx.font = `500 ${nameFontSz} system-ui, sans-serif`;
         ctx.fillStyle = C.ink;
         ctx.textAlign = "left";
 
-        // Simple word-wrap — up to 2 lines
         const words = name.split(" ");
         let line1 = "", line2 = "";
         let building = "";
@@ -2117,28 +2348,30 @@ function exportWeekAsImage() {
           }
         }
         if (wrapped) {
-          line2 = truncate(building, maxNameW, "500 12px system-ui, sans-serif");
+          line2 = truncate(building, maxNameW, `500 ${nameFontSz} system-ui, sans-serif`);
         } else {
-          line1 = truncate(building, maxNameW, "500 12px system-ui, sans-serif");
+          line1 = truncate(building, maxNameW, `500 ${nameFontSz} system-ui, sans-serif`);
         }
 
+        const lineH = dinnersOnly ? 22 : 16;
+        const baseY = sy + nameTopOffset + 18;
         if (wrapped) {
-          ctx.fillText(line1, cx + 10, sy + 34);
-          ctx.fillText(line2, cx + 10, sy + 50);
+          ctx.fillText(line1, cx + 10, baseY);
+          ctx.fillText(line2, cx + 10, baseY + lineH);
         } else {
-          ctx.fillText(line1, cx + 10, sy + 42);
+          ctx.fillText(line1, cx + 10, baseY + (dinnersOnly ? lineH / 2 : 0));
         }
       }
 
       // Divider between slots (not after last)
-      if (ti < 2) hline(sy + slotH, cx + 8, cx + COL_W - 8, C.rule, 0.5);
+      if (ti < TYPES_EXP.length - 1) hline(sy + slotHeff, cx + 8, cx + COL_W - 8, C.rule, 0.5);
     });
   });
 
   // ── GROCERY LIST ─────────────────────────────────────────────────
-  let gy = gridTop + cardH + 44;
+  let gy = gridTop + cardHeff + 44;
 
-  if (groceryCats.length) {
+  if (includeGrocery && groceryCats.length) {
     hline(gy - 20, PAD, W - PAD, C.rule, 1);
 
     text("Grocery List", PAD, gy + 4,
@@ -2205,7 +2438,7 @@ function exportWeekAsImage() {
 
   // ── Download ─────────────────────────────────────────────────────
   const link = document.createElement("a");
-  link.download = `weekly-feast-${weekStart}.png`;
+  link.download = `weekly-feast-${weekStart}${dinnersOnly ? "-dinners" : includeGrocery ? "-full" : "-meals"}.png`;
   link.href = canvas.toDataURL("image/png");
   link.click();
 }
