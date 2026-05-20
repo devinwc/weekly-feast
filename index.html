@@ -266,7 +266,7 @@
       <a href="weekly-feast-manager.html" class="btn btn-ghost" style="text-decoration:none">⚙ Manage Meals</a>
       <button class="btn btn-outline" id="btn-add-meal" style="display:none" onclick="switchTab('add')">+ Add Meal</button>
       <button class="btn btn-outline" id="btn-export" style="display:none" onclick="exportWeekAsImage()">⬇ Save Image</button>
-      <button class="btn btn-primary" id="btn-generate" onclick="handleGenerate()">✦ Generate Plan</button>
+      <button class="btn btn-primary" id="btn-generate" onclick="handleGenerate()">✦ New Plan</button>
     </div>
   </header>
 
@@ -274,7 +274,6 @@
     <button class="tab active" id="tab-plan"    onclick="switchTab('plan')">Meal Plan</button>
     <button class="tab"        id="tab-grocery" onclick="switchTab('grocery')">Grocery List</button>
     <button class="tab"        id="tab-history" onclick="switchTab('history')">History</button>
-    <button class="tab"        id="tab-add"     onclick="switchTab('add')">+ Add Meal</button>
   </div>
 
   <!-- Plan Panel -->
@@ -694,6 +693,18 @@ function showLatestConfirmedOnHome() {
 
   // Render a read-only "confirmed" view of the last confirmed week
   renderConfirmedPlanView(latest);
+
+  // Build a synthetic plan so groceryList() can populate the Grocery tab
+  const fakePlan = {
+    days: latest.days.map(d => ({
+      ...d,
+      meals: Object.fromEntries(
+        TYPES.map(t => [t, d.meals[t]?.id || null])
+      ),
+      overrides: {},
+    }))
+  };
+  try { renderGrocery(fakePlan); } catch(e) { /* offline/missing meals — skip */ }
 }
 
 function renderConfirmedPlanView(week) {
@@ -1317,6 +1328,7 @@ function renderPlan(plan) {
             <span style="flex:1"></span>
             <button class="slot-btn regen"    title="Regenerate"   onclick="handleRegen(${di},'${type}')">↺</button>
             <button class="slot-btn thumbdown${isTD?" active":""}" title="${isTD?"Remove exclusion":"Exclude from future"}" onclick="toggleTD('${meal.id}')">👎</button>
+            ${!meal.id.startsWith('manual_') ? `<button class="slot-btn" title="View ingredients & recipe" onclick="openMealDetailModal('${meal.id}')">👁</button>` : ""}
             <button class="slot-btn"           title="More options" onclick="openModal(${di},'${type}')">···</button>
           </div>`;
       }
@@ -1365,6 +1377,12 @@ function renderGrocery(plan) {
 // ═══════════════════════════════════════════════════════════════════
 
 function handleGenerate() {
+  // If a plan or confirmed week is already showing, warn before clearing
+  const hasExisting = currentPlan || confirmedWeeks.length;
+  if (hasExisting) {
+    const ok = confirm("Replace the current plan with a new one?\n\nThis won't delete your confirmed history — it only clears what's on screen.");
+    if (!ok) return;
+  }
   const btn=document.getElementById("btn-generate");
   btn.innerHTML='<span class="spinner"></span> Generating…'; btn.disabled=true;
   setTimeout(()=>{
