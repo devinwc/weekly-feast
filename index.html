@@ -1403,7 +1403,8 @@ function handleGenerate() {
 function switchTab(t) {
   document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
   document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));
-  document.getElementById("tab-"+t).classList.add("active");
+  const tabEl = document.getElementById("tab-"+t);
+  if (tabEl) tabEl.classList.add("active");   // tab-add was removed; panel still works
   document.getElementById("panel-"+t).classList.add("active");
   if (t === "history") renderHistory();
 }
