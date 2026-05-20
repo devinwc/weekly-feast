@@ -2189,6 +2189,12 @@ function exportWeekAsImage(includeGrocery = true, dinnersOnly = false) {
     ? 56 + groceryCats.length * 28 + totalGroceryItems * 22 + 32
     : 0;
 
+  // Card geometry — needed for canvas height calculation
+  const dayHeaderH = 32;
+  const slotH      = 72;
+  const cardH      = dayHeaderH + slotH * 3;
+  const cardHforH  = dinnersOnly ? (dayHeaderH + 96) : cardH;
+
   const H = 132 + cardHforH + 36 + (includeGrocery && groceryH ? groceryH + 32 : 0) + 72;
 
   const canvas = document.createElement("canvas");
@@ -2274,11 +2280,7 @@ function exportWeekAsImage(includeGrocery = true, dinnersOnly = false) {
 
   // ── MEAL GRID ────────────────────────────────────────────────────
   const gridTop    = headerY + 88;
-  const dayHeaderH = 32;
-  const slotH      = 72;  // per meal slot (breakfast/lunch/dinner)
-  const cardH      = dayHeaderH + slotH * 3;
-  // Effective card height for canvas sizing (dinnersOnly uses 1 tall slot)
-  const cardHforH  = dinnersOnly ? (dayHeaderH + 96) : cardH;
+  // dayHeaderH, slotH, cardH declared earlier for canvas height calc
   const TYPES_EXP  = dinnersOnly ? ["dinner"] : ["breakfast", "lunch", "dinner"];
   const TYPE_LABEL = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner" };
   const PACE_COLOR = { busy: C.amber, relaxed: C.green, chaos: C.red, normal: C.inkSoft };
