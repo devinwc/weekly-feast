@@ -265,6 +265,7 @@
       <span id="sync-status" style="font-size:11px;font-weight:500;letter-spacing:.04em;color:var(--ink-soft);transition:color .3s"></span>
       <a href="weekly-feast-manager.html" class="btn btn-ghost" style="text-decoration:none">⚙ Manage Meals</a>
       <button class="btn btn-outline" id="btn-add-meal" style="display:none" onclick="switchTab('add')">+ Add Meal</button>
+      <button class="btn btn-outline" id="btn-export" style="display:none" onclick="exportWeekAsImage()">⬇ Save Image</button>
       <button class="btn btn-primary" id="btn-generate" onclick="handleGenerate()">✦ Generate Plan</button>
     </div>
   </header>
@@ -686,6 +687,7 @@ function showLatestConfirmedOnHome() {
 
   const latest = confirmedWeeks[0]; // already sorted newest-first
   document.getElementById("btn-add-meal").style.display = "inline-flex";
+  document.getElementById("btn-export").style.display = "inline-flex";
   document.getElementById("empty-state").style.display = "none";
   document.getElementById("plan-content").style.display = "block";
   document.getElementById("confirm-bar").style.display = "none";
@@ -974,12 +976,14 @@ function shiftWeek(dir) {
     document.getElementById("confirm-bar").style.display = alreadyConfirmed ? "none" : "flex";
     document.getElementById("plan-content").style.display = "block";
     document.getElementById("empty-state").style.display = "none";
+    document.getElementById("btn-export").style.display = "inline-flex";
   } else {
     currentPlan = null;
     renderWeekNav();
     document.getElementById("plan-content").style.display = "none";
     document.getElementById("empty-state").style.display = "block";
     document.getElementById("confirm-bar").style.display = "none";
+    document.getElementById("btn-export").style.display = "none";
   }
 }
 
@@ -1369,6 +1373,7 @@ function handleGenerate() {
     document.getElementById("empty-state").style.display="none";
     document.getElementById("plan-content").style.display="block";
     document.getElementById("btn-add-meal").style.display="inline-flex";
+    document.getElementById("btn-export").style.display="inline-flex";
     renderWeekNav();
     const alreadyConfirmed = confirmedWeeks.some(w => w.weekId === currentPlan.id);
     document.getElementById("confirm-bar").style.display = alreadyConfirmed ? "none" : "flex";
@@ -1851,6 +1856,341 @@ function deleteConfirmedWeek(weekId) {
 }
 
 // ── Init ──────────────────────────────────────────────────────────
+
+// ═══════════════════════════════════════════════════════════════════
+// EXPORT — WEEK AS PNG IMAGE
+// Draws a clean, self-contained meal plan card using Canvas API.
+// No external libraries required.
+// ═══════════════════════════════════════════════════════════════════
+
+function exportWeekAsImage() {
+  // ── Gather data ──────────────────────────────────────────────────
+  // Prefer currentPlan (live plan); fall back to latest confirmed week
+  let planDays  = null;
+  let weekStart = null;
+  let weekEnd   = null;
+  let totalCost = null;
+
+  if (currentPlan) {
+    planDays  = currentPlan.days;
+    weekStart = currentPlan.weekStartDate;
+    weekEnd   = currentPlan.weekEndDate;
+    totalCost = currentPlan.projectedWeeklyTotal;
+  } else if (confirmedWeeks.length) {
+    const w = confirmedWeeks[0];
+    // confirmed week days store meals as {id, name} objects
+    planDays  = w.days.map(d => ({ ...d, _isConfirmed: true }));
+    weekStart = w.weekStartDate;
+    weekEnd   = w.weekEndDate;
+    totalCost = w.totalCost;
+  } else {
+    alert("No meal plan to export yet. Generate or confirm a week first.");
+    return;
+  }
+
+  // Helper: get meal name for a slot
+  function slotName(day, type) {
+    if (day._isConfirmed) {
+      const s = day.meals[type];
+      if (!s || !s.name || s.name === "—") return null;
+      if (s.id === NA) return "Eating out";
+      return s.name;
+    }
+    const mid = resolveSlot(day, type);
+    if (!mid || mid === NA) return mid === NA ? "Eating out" : null;
+    if (FB_LOOKUP[mid]) return FB_LOOKUP[mid].name;
+    if (day.overrides && day.overrides[type]) return day.overrides[type].name;
+    return ML[mid]?.name || null;
+  }
+
+  // ── Build grocery list for the image ────────────────────────────
+  // For confirmed weeks we re-derive from ML ids; if unavailable, skip
+  let groceryGroups = null;
+  let groceryCost   = 0;
+  if (currentPlan) {
+    const g = groceryList(currentPlan);
+    groceryGroups = g.grp;
+    groceryCost   = g.cost;
+  } else {
+    // Try to build from confirmed week day meal ids
+    const fakePlan = {
+      days: planDays.map(d => ({
+        ...d,
+        meals: Object.fromEntries(
+          TYPES.map(t => [t, d.meals[t]?.id || null])
+        ),
+        overrides: {},
+      }))
+    };
+    try {
+      const g = groceryList(fakePlan);
+      groceryGroups = g.grp;
+      groceryCost   = g.cost;
+    } catch(e) { groceryGroups = null; }
+  }
+
+  // ── Canvas setup ─────────────────────────────────────────────────
+  const DPR    = window.devicePixelRatio || 2;
+  const W      = 1200;  // logical width
+  const PAD    = 48;
+  const COL_W  = (W - PAD * 2 - 6 * 12) / 7;  // 7 day columns
+
+  // Measure total height dynamically
+  // Header ~120, meal grid ~320, grocery section ~variable, footer ~60
+  const GROCERY_CAT_ORDER = ["Produce","Meat & Seafood","Dairy & Eggs","Bread & Bakery","Canned & Jarred","Pantry","Other"];
+  const groceryCats = groceryGroups
+    ? GROCERY_CAT_ORDER.filter(c => groceryGroups[c]?.length)
+    : [];
+  const totalGroceryItems = groceryCats.reduce((s,c)=>(s + (groceryGroups[c]?.length||0)), 0);
+
+  // Grocery section: title 40 + cats * 28 header + items * 22 + padding
+  const groceryH = groceryCats.length
+    ? 56 + groceryCats.length * 28 + totalGroceryItems * 22 + 32
+    : 0;
+
+  const H = 132 + 320 + (groceryH ? groceryH + 32 : 0) + 72;
+
+  const canvas = document.createElement("canvas");
+  canvas.width  = W * DPR;
+  canvas.height = H * DPR;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(DPR, DPR);
+
+  // ── Color palette (matches app) ──────────────────────────────────
+  const C = {
+    cream:    "#F7F3EE",
+    paper:    "#FFFDF9",
+    ink:      "#1C1917",
+    inkSoft:  "#57534E",
+    rule:     "#E7E2DB",
+    amber:    "#D97706",
+    amberLt:  "#FEF3C7",
+    green:    "#15803D",
+    greenLt:  "#DCFCE7",
+    red:      "#B91C1C",
+  };
+
+  // ── Background ───────────────────────────────────────────────────
+  ctx.fillStyle = C.cream;
+  ctx.fillRect(0, 0, W, H);
+
+  // ── Helpers ──────────────────────────────────────────────────────
+  function roundRect(x, y, w, h, r, fill, stroke) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+    if (fill)   { ctx.fillStyle = fill;     ctx.fill();   }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.stroke(); }
+  }
+
+  function truncate(text, maxW, font) {
+    ctx.font = font;
+    if (ctx.measureText(text).width <= maxW) return text;
+    while (text.length > 1 && ctx.measureText(text + "…").width > maxW)
+      text = text.slice(0, -1);
+    return text + "…";
+  }
+
+  function text(str, x, y, font, color, align = "left", maxW = null) {
+    ctx.font = font;
+    ctx.fillStyle = color;
+    ctx.textAlign = align;
+    const s = maxW ? truncate(str, maxW, font) : str;
+    ctx.fillText(s, x, y);
+  }
+
+  function hline(y, x1 = PAD, x2 = W - PAD, color = C.rule, lw = 1) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lw;
+    ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
+    ctx.restore();
+  }
+
+  // ── HEADER ───────────────────────────────────────────────────────
+  const headerY = 36;
+  text("Weekly Feast", PAD, headerY + 32, "bold 28px 'Georgia', serif", C.ink);
+
+  const dateRange = `${fmtDate(weekStart)} – ${fmtDate(weekEnd)}`;
+  text(dateRange, PAD, headerY + 54, "500 13px system-ui, sans-serif", C.inkSoft);
+
+  // Cost pill top-right
+  const costStr = `$${totalCost} est.`;
+  ctx.font = "600 13px system-ui, sans-serif";
+  const cw = ctx.measureText(costStr).width + 24;
+  roundRect(W - PAD - cw, headerY + 22, cw, 28, 8, C.amberLt);
+  text(costStr, W - PAD - cw / 2, headerY + 41, "600 13px system-ui, sans-serif", C.amber, "center");
+
+  hline(headerY + 72, PAD, W - PAD, C.ink, 1.5);
+
+  // ── MEAL GRID ────────────────────────────────────────────────────
+  const gridTop    = headerY + 88;
+  const dayHeaderH = 32;
+  const slotH      = 72;  // per meal slot (breakfast/lunch/dinner)
+  const cardH      = dayHeaderH + slotH * 3;
+  const TYPES_EXP  = ["breakfast", "lunch", "dinner"];
+  const TYPE_LABEL = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner" };
+  const PACE_COLOR = { busy: C.amber, relaxed: C.green, chaos: C.red, normal: C.inkSoft };
+
+  planDays.forEach((day, i) => {
+    const cx = PAD + i * (COL_W + 12);
+    const cy = gridTop;
+
+    // Card background
+    roundRect(cx, cy, COL_W, cardH, 8, C.paper, C.rule);
+
+    // Day header band
+    roundRect(cx, cy, COL_W, dayHeaderH, 8, C.rule, null);
+    // square off bottom corners of header band
+    ctx.fillStyle = C.rule;
+    ctx.fillRect(cx, cy + dayHeaderH - 8, COL_W, 8);
+
+    const dayAbbr = day.dayOfWeek.slice(0, 3).toUpperCase();
+    text(dayAbbr, cx + COL_W / 2, cy + 21, "600 11px system-ui, sans-serif", C.inkSoft, "center");
+
+    // Pace dot
+    const paceColor = PACE_COLOR[day.pace] || C.inkSoft;
+    if (day.pace && day.pace !== "normal") {
+      ctx.beginPath();
+      ctx.arc(cx + COL_W - 14, cy + 16, 4, 0, Math.PI * 2);
+      ctx.fillStyle = paceColor;
+      ctx.fill();
+    }
+
+    TYPES_EXP.forEach((type, ti) => {
+      const sy = cy + dayHeaderH + ti * slotH;
+
+      // Type label
+      text(TYPE_LABEL[type], cx + 10, sy + 16,
+        "500 9px system-ui, sans-serif", C.inkSoft);
+
+      // Meal name — wrap up to 2 lines
+      const name = slotName(day, type);
+      if (!name) {
+        text("—", cx + 10, sy + 34, "400 11px system-ui, sans-serif", C.rule);
+      } else {
+        const maxNameW = COL_W - 20;
+        ctx.font = "500 12px system-ui, sans-serif";
+        ctx.fillStyle = C.ink;
+        ctx.textAlign = "left";
+
+        // Simple word-wrap — up to 2 lines
+        const words = name.split(" ");
+        let line1 = "", line2 = "";
+        let building = "";
+        let wrapped = false;
+        for (const word of words) {
+          const test = building ? building + " " + word : word;
+          if (!wrapped && ctx.measureText(test).width > maxNameW) {
+            line1 = building;
+            building = word;
+            wrapped = true;
+          } else {
+            building = test;
+          }
+        }
+        if (wrapped) {
+          line2 = truncate(building, maxNameW, "500 12px system-ui, sans-serif");
+        } else {
+          line1 = truncate(building, maxNameW, "500 12px system-ui, sans-serif");
+        }
+
+        if (wrapped) {
+          ctx.fillText(line1, cx + 10, sy + 34);
+          ctx.fillText(line2, cx + 10, sy + 50);
+        } else {
+          ctx.fillText(line1, cx + 10, sy + 42);
+        }
+      }
+
+      // Divider between slots (not after last)
+      if (ti < 2) hline(sy + slotH, cx + 8, cx + COL_W - 8, C.rule, 0.5);
+    });
+  });
+
+  // ── GROCERY LIST ─────────────────────────────────────────────────
+  let gy = gridTop + cardH + 44;
+
+  if (groceryCats.length) {
+    hline(gy - 20, PAD, W - PAD, C.rule, 1);
+
+    text("Grocery List", PAD, gy + 4,
+      "bold 20px 'Georgia', serif", C.ink);
+    const gCostStr = `$${groceryCost} estimated`;
+    text(gCostStr, W - PAD, gy + 4,
+      "500 13px system-ui, sans-serif", C.inkSoft, "right");
+
+    gy += 28;
+
+    // Two-column grocery layout
+    const GCOLS   = 2;
+    const GCOL_W  = (W - PAD * 2 - 24) / GCOLS;
+    const GCOL_PAD = GCOL_W + 24;
+
+    // Flatten items across categories for two-column flow
+    const allItems = [];
+    groceryCats.forEach(cat => {
+      allItems.push({ _cat: true, name: cat, count: groceryGroups[cat].length });
+      groceryGroups[cat].forEach(item => allItems.push(item));
+    });
+
+    // Split into two columns
+    const half = Math.ceil(allItems.length / 2);
+    const col0 = allItems.slice(0, half);
+    const col1 = allItems.slice(half);
+
+    [col0, col1].forEach((col, ci) => {
+      let iy = gy;
+      const cx = PAD + ci * GCOL_PAD;
+      col.forEach(item => {
+        if (item._cat) {
+          // Category header
+          text(item.name.toUpperCase(), cx, iy + 14,
+            "600 10px system-ui, sans-serif", C.inkSoft);
+          hline(iy + 18, cx, cx + GCOL_W - 8, C.rule, 0.75);
+          iy += 28;
+        } else {
+          // Grocery item row
+          // dot
+          ctx.beginPath();
+          ctx.arc(cx + 6, iy + 8, 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = C.rule;
+          ctx.fill();
+
+          text(item.name, cx + 16, iy + 12,
+            "400 12px system-ui, sans-serif", C.ink, "left", GCOL_W - 80);
+          text(item.qty, cx + GCOL_W - 48, iy + 12,
+            "400 11px system-ui, sans-serif", C.inkSoft, "right", 80);
+          text(`$${item.cost.toFixed(2)}`, cx + GCOL_W - 4, iy + 12,
+            "500 11px system-ui, sans-serif", C.inkSoft, "right");
+          iy += 22;
+        }
+      });
+    });
+  }
+
+  // ── FOOTER ───────────────────────────────────────────────────────
+  hline(H - 52, PAD, W - PAD, C.rule);
+  text("Weekly Feast", PAD, H - 26,
+    "500 12px system-ui, sans-serif", C.inkSoft);
+  text(`Generated ${new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}`,
+    W - PAD, H - 26, "400 12px system-ui, sans-serif", C.inkSoft, "right");
+
+  // ── Download ─────────────────────────────────────────────────────
+  const link = document.createElement("a");
+  link.download = `weekly-feast-${weekStart}.png`;
+  link.href = canvas.toDataURL("image/png");
+  link.click();
+}
+
 initApp();
 </script>
 </body>
