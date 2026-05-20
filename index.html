@@ -269,7 +269,7 @@
     </div>
   </header>
 
-  <div class="tabs" id="tabs" style="display:none">
+  <div class="tabs" id="tabs">
     <button class="tab active" id="tab-plan"    onclick="switchTab('plan')">Meal Plan</button>
     <button class="tab"        id="tab-grocery" onclick="switchTab('grocery')">Grocery List</button>
     <button class="tab"        id="tab-history" onclick="switchTab('history')">History</button>
@@ -677,6 +677,87 @@ async function withSyncStatus(fn) {
   return ok;
 }
 
+// ── SHOW LATEST CONFIRMED ON HOME ─────────────────────────────────
+// Change 2: If confirmed weeks exist, render the most recent one on
+// the Plan tab home screen so the user sees it immediately on load.
+
+function showLatestConfirmedOnHome() {
+  if (!confirmedWeeks.length) return;
+
+  const latest = confirmedWeeks[0]; // already sorted newest-first
+  document.getElementById("btn-add-meal").style.display = "inline-flex";
+  document.getElementById("empty-state").style.display = "none";
+  document.getElementById("plan-content").style.display = "block";
+  document.getElementById("confirm-bar").style.display = "none";
+
+  // Render a read-only "confirmed" view of the last confirmed week
+  renderConfirmedPlanView(latest);
+}
+
+function renderConfirmedPlanView(week) {
+  // Update week label
+  const s = fmtDate(week.weekStartDate), e = fmtDate(week.weekEndDate);
+  document.getElementById("week-label").textContent = `${s} – ${e}`;
+  document.getElementById("week-nav-label").textContent = `Confirmed · ${s}–${e}`;
+
+  // Summary bar
+  document.getElementById("summary-bar").innerHTML = `
+    <div class="stat-pill highlight">
+      <span class="stat-value">$${week.totalCost}</span>
+      <span class="stat-label">Est. total</span>
+    </div>
+    <div class="stat-pill">
+      <span class="stat-value">${week.days.length}</span>
+      <span class="stat-label">Days planned</span>
+    </div>
+    <div class="stat-pill">
+      <span class="confirmed-badge">✓ Confirmed ${week.confirmedAt}</span>
+    </div>`;
+
+  // Day grid — read-only confirmed view with View buttons
+  const PACE_LABEL_CONF = { normal:"", busy:"🟡", relaxed:"🟢 Relaxed", chaos:"🔴 Chaos" };
+  document.getElementById("excl-banner").style.display = "none";
+  document.getElementById("day-grid").innerHTML = week.days.map(day => {
+    const cardClass = day.isChaosDay ? "day-card is-chaos" : "day-card";
+
+    const slotsHTML = TYPES.map(type => {
+      const slot = day.meals[type];
+      const name = slot?.name || "—";
+      const mid  = slot?.id;
+
+      let body;
+      if (!mid || name === "—") {
+        body = `<div class="meal-name-row"><span class="meal-na">—</span></div>`;
+      } else if (mid === NA) {
+        body = `<div class="meal-name-row"><span class="meal-na">🍴 Eating out</span></div>`;
+      } else {
+        // Change 3 prep: View button that opens ingredient modal
+        const isFallback = !!FB_LOOKUP[mid];
+        const nameClass  = isFallback ? "meal-name is-fallback" : "meal-name";
+        body = `
+          <div class="meal-name-row">
+            <span class="${nameClass}">${name}</span>
+          </div>
+          <div class="meal-actions">
+            ${!isFallback && ML[mid] ? `<button class="slot-btn" title="View ingredients" onclick="openMealDetailModal('${mid}')">👁</button>` : ""}
+          </div>`;
+      }
+      return `<div class="meal-slot"><div class="meal-type-label">${type}</div><div class="meal-item">${body}</div></div>`;
+    }).join("");
+
+    const paceLbl = PACE_LABEL_CONF[day.pace] || "";
+    return `<div class="${cardClass}">
+      <div class="day-header">
+        <span class="day-name">${day.dayOfWeek.slice(0,3)}</span>
+        ${paceLbl ? `<span class="pace-chip ${day.pace}" style="font-size:9px;padding:1px 5px">${paceLbl}</span>` : ""}
+        <span class="day-date">${fmtDate(day.date)}</span>
+      </div>
+      ${day.isChaosDay ? '<div class="chaos-banner">🔴 Chaos day — fallback meals</div>' : ""}
+      <div class="day-meals">${slotsHTML}</div>
+    </div>`;
+  }).join("");
+}
+
 // ── APP INIT ───────────────────────────────────────────────────────
 
 async function initApp() {
@@ -705,6 +786,7 @@ async function initApp() {
   renderWeekNav();   // show correct week label on startup
   renderScheduleRow();
   renderHistory();
+  showLatestConfirmedOnHome(); // Change 2: display most recent confirmed week on load
 }
 
 let thumbedDown = new Set(); // populated by initApp → loadThumbedDownFromDB
@@ -1286,7 +1368,6 @@ function handleGenerate() {
     weekPlans[currentPlan.weekStartDate] = currentPlan;
     document.getElementById("empty-state").style.display="none";
     document.getElementById("plan-content").style.display="block";
-    document.getElementById("tabs").style.display="flex";
     document.getElementById("btn-add-meal").style.display="inline-flex";
     renderWeekNav();
     const alreadyConfirmed = confirmedWeeks.some(w => w.weekId === currentPlan.id);
@@ -1500,6 +1581,53 @@ function closeModal(id,e) {
 }
 document.addEventListener("keydown",e=>{ if(e.key==="Escape") document.querySelectorAll(".modal-backdrop.open").forEach(m=>m.classList.remove("open")); });
 
+// ── MEAL DETAIL MODAL (Change 3) ───────────────────────────────────
+// Opens a read-only ingredient/detail view for a meal from confirmed history.
+
+function openMealDetailModal(mealId) {
+  const meal = ML[mealId];
+  if (!meal) return;
+
+  document.getElementById("action-title").textContent = meal.name;
+  document.getElementById("action-subtitle").textContent =
+    `${meal.mealType.charAt(0).toUpperCase()+meal.mealType.slice(1)} · ${meal.totalTime}min · $${meal.totalCostEstimate}`;
+
+  const ings = (meal.ingredients||[]);
+  const ingHTML = ings.length
+    ? `<div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
+        ${ings.map(i=>`
+          <div style="display:flex;align-items:baseline;gap:10px;padding:7px 10px;background:var(--cream);border-radius:7px;">
+            <span style="font-size:13px;font-weight:500;flex:1">${i.name}</span>
+            <span style="font-size:12px;color:var(--ink-soft)">${i.quantity||""}</span>
+            ${i.estimatedCost ? `<span style="font-size:11px;color:var(--ink-soft);width:40px;text-align:right">$${(i.estimatedCost).toFixed(2)}</span>` : ""}
+          </div>`).join("")}
+      </div>`
+    : `<p style="font-size:13px;color:var(--ink-soft);font-style:italic">No ingredients listed.</p>`;
+
+  const metaHTML = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+      <span class="badge badge-time">${meal.prepTime}m prep</span>
+      <span class="badge badge-time">${meal.cookTime}m cook</span>
+      ${meal.kidApprovalScore ? `<span class="badge" style="background:var(--amber-lt);color:var(--amber);border:1px solid #FDE68A">⭐ ${meal.kidApprovalScore}/5 kids</span>` : ""}
+      ${(meal.tags||[]).map(t=>`<span class="badge" style="background:var(--cream);color:var(--ink-soft);border:1px solid var(--rule)">${t}</span>`).join("")}
+    </div>`;
+
+  const linkHTML = meal.recipeLink
+    ? `<a href="${meal.recipeLink}" target="_blank" rel="noopener" class="btn btn-outline" style="font-size:12px;margin-bottom:14px;display:inline-flex;">🔗 View Recipe</a>`
+    : "";
+
+  document.getElementById("action-body").innerHTML = `
+    ${metaHTML}
+    ${linkHTML}
+    <p style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:8px;">Ingredients</p>
+    ${ingHTML}`;
+
+  document.getElementById("action-footer").innerHTML =
+    `<button class="btn btn-outline" onclick="closeModal('modal-action')">Close</button>`;
+
+  document.getElementById("modal-action").classList.add("open");
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // CONFIRM WEEK
 // ═══════════════════════════════════════════════════════════════════
@@ -1664,14 +1792,20 @@ function renderHistory() {
       const cells = TYPES.map(type => {
         const slot = day.meals[type];
         const name = slot?.name || "—";
-        const cls  = !slot?.id          ? ""
-                   : slot.id === NA     ? "is-na"
-                   : FB_LOOKUP[slot.id] ? "is-fallback"
+        const mid  = slot?.id;
+        const cls  = !mid               ? ""
+                   : mid === NA         ? "is-na"
+                   : FB_LOOKUP[mid]     ? "is-fallback"
                    : day.isChaosDay     ? "is-chaos"
                    : "";
+        // Show View button only for real database meals
+        const canView = mid && mid !== NA && !FB_LOOKUP[mid] && ML[mid];
         return `<div class="history-meal-cell">
           <div class="history-meal-type">${type}</div>
-          <div class="history-meal-name ${cls}">${name}</div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <div class="history-meal-name ${cls}">${name}</div>
+            ${canView ? `<button class="slot-btn" title="View ingredients" onclick="openMealDetailModal('${mid}')" style="flex-shrink:0">👁</button>` : ""}
+          </div>
         </div>`;
       }).join("");
 
