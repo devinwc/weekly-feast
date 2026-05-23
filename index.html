@@ -264,6 +264,7 @@
     <div class="header-actions">
       <span id="sync-status" style="font-size:11px;font-weight:500;letter-spacing:.04em;color:var(--ink-soft);transition:color .3s"></span>
       <a href="weekly-feast-manager.html" class="btn btn-ghost" style="text-decoration:none">⚙ Manage Meals</a>
+      <button class="btn btn-ghost" onclick="openSettingsModal()" title="Connection settings">🔌 Settings</button>
       <button class="btn btn-outline" id="btn-add-meal" style="display:none" onclick="switchTab('add')">+ Add Meal</button>
       <!-- Split export button -->
       <div id="btn-export" style="display:none;position:relative">
@@ -468,6 +469,87 @@
 
 </div>
 
+
+<!-- Setup Modal -->
+<div class="modal-backdrop" id="modal-setup" style="z-index:200">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Welcome to Weekly Feast 🍽</div>
+        <div class="modal-subtitle" id="setup-subtitle">Connect your Supabase project to get started.</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--ink-soft);margin-bottom:18px;line-height:1.6">
+        Weekly Feast uses <strong style="color:var(--ink)">Supabase</strong> to sync your meal plans across devices.
+        Enter your own project credentials below — you'll find them in your Supabase dashboard under
+        <strong style="color:var(--ink)">Project Settings → API</strong>.
+      </p>
+      <div class="form-group">
+        <label class="form-label">Supabase Project URL</label>
+        <input class="form-input" id="setup-sb-url" type="url"
+          placeholder="https://xxxxxxxxxxx.supabase.co"
+          oninput="setupClearError()">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Supabase Anon Key</label>
+        <input class="form-input" id="setup-sb-key" type="text"
+          placeholder="eyJhbGciOiJIUz…"
+          style="font-size:11px;font-family:monospace"
+          oninput="setupClearError()">
+      </div>
+      <div id="setup-error" style="font-size:12px;color:var(--red);min-height:18px;margin-top:-6px;margin-bottom:8px"></div>
+      <details style="margin-top:4px">
+        <summary style="font-size:12px;color:var(--ink-soft);cursor:pointer;user-select:none">Where do I find these?</summary>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:8px;line-height:1.7;padding:10px 12px;background:var(--cream);border-radius:8px">
+          1. Go to <strong style="color:var(--ink)">supabase.com</strong> and open your project<br>
+          2. Click <strong style="color:var(--ink)">Project Settings</strong> (gear icon) → <strong style="color:var(--ink)">API</strong><br>
+          3. Copy the <strong style="color:var(--ink)">Project URL</strong> and the <strong style="color:var(--ink)">anon / public</strong> key<br>
+          4. You'll also need to add your Anthropic API key to your Supabase <code style="font-size:11px;background:var(--rule);padding:1px 4px;border-radius:3px">settings</code> table
+          under key <code style="font-size:11px;background:var(--rule);padding:1px 4px;border-radius:3px">anthropic_api_key</code> for recipe import to work.
+        </div>
+      </details>
+    </div>
+    <div class="modal-footer" style="justify-content:space-between;align-items:center">
+      <button class="btn btn-ghost" style="font-size:11px" onclick="openSettingsModal()">⚙ Change later in Settings</button>
+      <button class="btn btn-primary" id="setup-save-btn" onclick="saveSetupConfig()">Save &amp; Connect</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal (accessible from header) -->
+<div class="modal-backdrop" id="modal-settings" onclick="closeModal('modal-settings',event)" style="z-index:200">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Connection Settings</div>
+        <div class="modal-subtitle">Update your Supabase credentials.</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-settings')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Supabase Project URL</label>
+        <input class="form-input" id="settings-sb-url" type="url" placeholder="https://xxxxxxxxxxx.supabase.co">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Supabase Anon Key</label>
+        <input class="form-input" id="settings-sb-key" type="text"
+          placeholder="eyJhbGciOiJIUz…"
+          style="font-size:11px;font-family:monospace">
+      </div>
+      <div id="settings-error" style="font-size:12px;color:var(--red);min-height:18px;margin-top:-6px"></div>
+      <p style="font-size:12px;color:var(--ink-soft);margin-top:12px">
+        Credentials are stored in your browser's localStorage — never sent to anyone except your own Supabase project.
+      </p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-settings')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSettingsConfig()">Save &amp; Reconnect</button>
+    </div>
+  </div>
+</div>
+
 <!-- Confirm Week Modal -->
 <div class="modal-backdrop" id="modal-confirm" onclick="closeModal('modal-confirm',event)">
   <div class="modal" style="max-width:500px">
@@ -568,22 +650,38 @@ const TIME_BUDGETS = {
 // Supabase is the source of truth that keeps devices in sync.
 // ═══════════════════════════════════════════════════════════════════
 
-const SB_URL = "https://ltcukmqocxwfbvlsovnj.supabase.co";
-const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx0Y3VrbXFvY3h3ZmJ2bHNvdm5qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4NDMxMDAsImV4cCI6MjA5NDQxOTEwMH0.vViIrmuOEf8Hxw_xnCj3UnM0EqtFe-Uc-leeA9ULM_k";
+// ── CONFIG: loaded from localStorage, set via first-run Setup modal ──
+const WF_CONFIG_KEY = "wf_config";
 
-const SB_HEADERS = {
-  "Content-Type":  "application/json",
-  "apikey":        SB_KEY,
-  "Authorization": "Bearer " + SB_KEY,
-  "Prefer":        "resolution=merge-duplicates",
-};
+function loadConfig() {
+  try { return JSON.parse(localStorage.getItem(WF_CONFIG_KEY)) || {}; } catch { return {}; }
+}
+function saveConfig(cfg) {
+  localStorage.setItem(WF_CONFIG_KEY, JSON.stringify(cfg));
+}
+
+let _cfg = loadConfig();
+let SB_URL = _cfg.sbUrl || "";
+let SB_KEY = _cfg.sbKey || "";
+
+function getSBHeaders() {
+  return {
+    "Content-Type":  "application/json",
+    "apikey":        SB_KEY,
+    "Authorization": "Bearer " + SB_KEY,
+    "Prefer":        "resolution=merge-duplicates",
+  };
+}
+// Keep SB_HEADERS as a live getter alias
+const SB_HEADERS = new Proxy({}, { get: (_, k) => getSBHeaders()[k] });
 
 /** Generic Supabase REST fetch — returns parsed JSON or null on error. */
 async function sbFetch(method, table, body = null, query = "") {
+  if (!SB_URL || !SB_KEY) return null;
   try {
     const res = await fetch(`${SB_URL}/rest/v1/${table}${query}`, {
       method,
-      headers: SB_HEADERS,
+      headers: getSBHeaders(),
       body: body ? JSON.stringify(body) : undefined,
     });
     if (!res.ok) { console.warn("Supabase error", res.status, await res.text()); return null; }
@@ -830,7 +928,84 @@ function renderConfirmedPlanView(week) {
 
 // ── APP INIT ───────────────────────────────────────────────────────
 
+
+// ═══════════════════════════════════════════════════════════════════
+// SETUP / SETTINGS — first-run credential configuration
+// ═══════════════════════════════════════════════════════════════════
+
+function showSetupModal() {
+  document.getElementById("modal-setup").classList.add("open");
+}
+
+function openSettingsModal() {
+  // Pre-fill with current values
+  const cfg = loadConfig();
+  document.getElementById("settings-sb-url").value = cfg.sbUrl || "";
+  document.getElementById("settings-sb-key").value = cfg.sbKey || "";
+  document.getElementById("settings-error").textContent = "";
+  // Close setup modal if open
+  document.getElementById("modal-setup").classList.remove("open");
+  document.getElementById("modal-settings").classList.add("open");
+}
+
+function setupClearError() {
+  document.getElementById("setup-error").textContent = "";
+}
+
+function _validateAndSave(urlId, keyId, errId, onSuccess) {
+  const url = document.getElementById(urlId).value.trim().replace(/\/$/, "");
+  const key = document.getElementById(keyId).value.trim();
+  const errEl = document.getElementById(errId);
+
+  if (!url || !url.startsWith("https://")) {
+    errEl.textContent = "Please enter a valid Supabase Project URL (starts with https://).";
+    return;
+  }
+  if (!key || key.length < 20) {
+    errEl.textContent = "Please enter your Supabase anon key.";
+    return;
+  }
+
+  // Save to localStorage and update runtime vars
+  const cfg = { sbUrl: url, sbKey: key };
+  saveConfig(cfg);
+  SB_URL = url;
+  SB_KEY = key;
+
+  onSuccess();
+}
+
+async function saveSetupConfig() {
+  _validateAndSave("setup-sb-url", "setup-sb-key", "setup-error", async () => {
+    document.getElementById("modal-setup").classList.remove("open");
+    document.getElementById("setup-subtitle").textContent = "Connect your Supabase project to get started.";
+    // Kick off the full app init now that we have credentials
+    await initApp();
+  });
+}
+
+async function saveSettingsConfig() {
+  _validateAndSave("settings-sb-url", "settings-sb-key", "settings-error", async () => {
+    closeModal("modal-settings");
+    // Reload data with new credentials
+    setSyncStatus("syncing");
+    await Promise.all([loadMealsFromDB(), loadThumbedDownFromDB(), loadConfirmedWeeksFromDB()]);
+    setSyncStatus("synced");
+    renderHistory();
+    showLatestConfirmedOnHome();
+  });
+}
+
 async function initApp() {
+  // Show setup modal if no Supabase credentials are configured
+  if (!SB_URL || !SB_KEY) {
+    showSetupModal();
+    renderWeekNav();
+    renderScheduleRow();
+    renderHistory();
+    return;
+  }
+
   setSyncStatus("syncing");
 
   const results = await Promise.all([
@@ -1994,7 +2169,7 @@ async function importFromUrlNew() {
     const timeout    = setTimeout(() => controller.abort(), 60000);
     let res;
     try {
-      res = await fetch("https://ltcukmqocxwfbvlsovnj.supabase.co/functions/v1/import-recipe", {
+      res = await fetch(`${SB_URL}/functions/v1/import-recipe`, {
         method: "POST",
         signal: controller.signal,
         headers: {

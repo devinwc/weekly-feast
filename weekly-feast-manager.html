@@ -163,6 +163,7 @@
     </div>
     <div class="header-actions">
       <span id="sync-status" style="font-size:11px;font-weight:500;color:var(--ink-soft);transition:color .3s"></span>
+      <button class="btn btn-ghost" onclick="openSettingsModal()" title="Connection settings">🔌 Settings</button>
       <button class="btn btn-outline" onclick="exportCSV()">⬇ Export CSV</button>
       <label class="btn btn-outline" style="cursor:pointer">
         ⬆ Import CSV
@@ -352,6 +353,69 @@
 </div><!-- /app -->
 
 <!-- Toast container -->
+
+<!-- Setup Modal -->
+<div class="modal-backdrop" id="modal-setup" style="z-index:200">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Welcome to Weekly Feast 🍽</div>
+        <div class="modal-subtitle">Connect your Supabase project to manage your meal database.</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--ink-soft);margin-bottom:18px;line-height:1.6">
+        Enter your Supabase project credentials — find them in your dashboard under
+        <strong style="color:var(--ink)">Project Settings → API</strong>.
+      </p>
+      <div class="form-group">
+        <label class="form-label">Supabase Project URL</label>
+        <input class="form-input" id="setup-sb-url" type="url" placeholder="https://xxxxxxxxxxx.supabase.co">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Supabase Anon Key</label>
+        <input class="form-input" id="setup-sb-key" type="text" placeholder="eyJhbGciOiJIUz…" style="font-size:11px;font-family:monospace">
+      </div>
+      <div id="setup-error" style="font-size:12px;color:var(--red);min-height:18px;margin-top:-6px;margin-bottom:8px"></div>
+    </div>
+    <div class="modal-footer" style="justify-content:space-between;align-items:center">
+      <button class="btn btn-ghost" style="font-size:11px" onclick="openSettingsModal()">⚙ Change later in Settings</button>
+      <button class="btn btn-primary" onclick="saveSetupConfig()">Save &amp; Connect</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-backdrop" id="modal-settings" onclick="closeModal('modal-settings',event)" style="z-index:200">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Connection Settings</div>
+        <div class="modal-subtitle">Update your Supabase credentials.</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-settings')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Supabase Project URL</label>
+        <input class="form-input" id="settings-sb-url" type="url" placeholder="https://xxxxxxxxxxx.supabase.co">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Supabase Anon Key</label>
+        <input class="form-input" id="settings-sb-key" type="text" placeholder="eyJhbGciOiJIUz…" style="font-size:11px;font-family:monospace">
+      </div>
+      <div id="settings-error" style="font-size:12px;color:var(--red);min-height:18px;margin-top:-6px"></div>
+      <p style="font-size:12px;color:var(--ink-soft);margin-top:12px">
+        Credentials are stored in your browser's localStorage only.
+      </p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-settings')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSettingsConfig()">Save &amp; Reconnect</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast-container" id="toast-container"></div>
 
 <!-- Log Feedback Modal -->
@@ -415,20 +479,30 @@
 // SUPABASE — same project as the main app, same tables
 // ═══════════════════════════════════════════════════════════════════
 
-const SB_URL = "https://ltcukmqocxwfbvlsovnj.supabase.co";
-const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx0Y3VrbXFvY3h3ZmJ2bHNvdm5qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4NDMxMDAsImV4cCI6MjA5NDQxOTEwMH0.vViIrmuOEf8Hxw_xnCj3UnM0EqtFe-Uc-leeA9ULM_k";
+// ── CONFIG: loaded from localStorage, set via Setup modal ──────────
+const WF_CONFIG_KEY = "wf_config";
+function loadConfig() { try { return JSON.parse(localStorage.getItem(WF_CONFIG_KEY)) || {}; } catch { return {}; } }
+function saveConfig(cfg) { localStorage.setItem(WF_CONFIG_KEY, JSON.stringify(cfg)); }
 
-const SB_HEADERS = {
-  "Content-Type":  "application/json",
-  "apikey":        SB_KEY,
-  "Authorization": "Bearer " + SB_KEY,
-  "Prefer":        "resolution=merge-duplicates",
-};
+let _cfg = loadConfig();
+let SB_URL = _cfg.sbUrl || "";
+let SB_KEY  = _cfg.sbKey  || "";
+
+function getSBHeaders() {
+  return {
+    "Content-Type":  "application/json",
+    "apikey":        SB_KEY,
+    "Authorization": "Bearer " + SB_KEY,
+    "Prefer":        "resolution=merge-duplicates",
+  };
+}
+const SB_HEADERS = new Proxy({}, { get: (_, k) => getSBHeaders()[k] });
 
 async function sbFetch(method, table, body = null, query = "") {
   try {
+    if (!SB_URL || !SB_KEY) return null;
     const res = await fetch(`${SB_URL}/rest/v1/${table}${query}`, {
-      method, headers: SB_HEADERS,
+      method, headers: getSBHeaders(),
       body: body ? JSON.stringify(body) : undefined,
     });
     if (!res.ok) { console.warn("Supabase error", res.status, await res.text()); return null; }
@@ -632,7 +706,7 @@ async function importFromUrl() {
 
     let res;
     try {
-      res = await fetch("https://ltcukmqocxwfbvlsovnj.supabase.co/functions/v1/import-recipe", {
+      res = await fetch(`${SB_URL}/functions/v1/import-recipe`, {
         method: "POST",
         signal: controller.signal,
         headers: {
@@ -1221,12 +1295,69 @@ function toast(msg, type="") {
 
 // ── Init ──────────────────────────────────────────────────────────
 (async () => {
+  if (!SB_URL || !SB_KEY) {
+    showSetupModal();
+    return;
+  }
   await loadAll();
   await loadAnthropicKey(); // load silently on startup so first import is instant
   renderMealTable();
   renderFeedback();
   renderExclusions();
 })();
+
+function showSetupModal() {
+  document.getElementById("modal-setup").classList.add("open");
+}
+
+function openSettingsModal() {
+  const cfg = loadConfig();
+  document.getElementById("settings-sb-url").value = cfg.sbUrl || "";
+  document.getElementById("settings-sb-key").value = cfg.sbKey || "";
+  document.getElementById("settings-error").textContent = "";
+  document.getElementById("modal-setup").classList.remove("open");
+  document.getElementById("modal-settings").classList.add("open");
+}
+
+function _validateAndSave(urlId, keyId, errId, onSuccess) {
+  const url = document.getElementById(urlId).value.trim().replace(/\/$/, "");
+  const key = document.getElementById(keyId).value.trim();
+  const errEl = document.getElementById(errId);
+  if (!url || !url.startsWith("https://")) {
+    errEl.textContent = "Please enter a valid Supabase Project URL (starts with https://).";
+    return;
+  }
+  if (!key || key.length < 20) {
+    errEl.textContent = "Please enter your Supabase anon key.";
+    return;
+  }
+  saveConfig({ sbUrl: url, sbKey: key });
+  SB_URL = url;
+  SB_KEY = key;
+  onSuccess();
+}
+
+async function saveSetupConfig() {
+  _validateAndSave("setup-sb-url", "setup-sb-key", "setup-error", async () => {
+    document.getElementById("modal-setup").classList.remove("open");
+    await loadAll();
+    await loadAnthropicKey();
+    renderMealTable();
+    renderFeedback();
+    renderExclusions();
+  });
+}
+
+async function saveSettingsConfig() {
+  _validateAndSave("settings-sb-url", "settings-sb-key", "settings-error", async () => {
+    closeModal("modal-settings");
+    await loadAll();
+    renderMealTable();
+    renderFeedback();
+    renderExclusions();
+    toast("Reconnected ✓", "success");
+  });
+}
 </script>
 </body>
 </html>
