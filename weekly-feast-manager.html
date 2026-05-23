@@ -440,6 +440,9 @@
       <span>📚 <strong id="library-count">0</strong> shared recipes</span>
       <span style="color:var(--rule)">|</span>
       <span style="color:var(--ink-soft)">Manage community-shared recipes. You can delete any entry.</span>
+      <div class="toolbar-right">
+        <button class="btn btn-ghost btn-sm" onclick="loadSharedMeals()">↺ Refresh</button>
+      </div>
     </div>
     <div class="toolbar" style="margin-bottom:16px">
       <input class="search-input" id="library-search" placeholder="Search shared recipes…" oninput="renderLibraryTable()">
@@ -931,10 +934,7 @@ function switchTab(t) {
   if (t==="meals")      renderMealTable();
   if (t==="feedback")   renderFeedback();
   if (t==="exclusions") renderExclusions();
-  if (t==="library") {
-    if (!window._libraryLoaded) { window._libraryLoaded = true; loadSharedMeals(); }
-    else renderLibraryTable();
-  }
+  if (t==="library") { loadSharedMeals(); }
 }
 
 // ═══════════════════════════════════════════════════════════════════
