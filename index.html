@@ -2072,10 +2072,50 @@ function openMealDetailModal(mealId) {
     <p style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:8px;">Ingredients</p>
     ${ingHTML}`;
 
-  document.getElementById("action-footer").innerHTML =
-    `<button class="btn btn-outline" onclick="closeModal('modal-action')">Close</button>`;
+  // Show "Share to Library" button if meal isn't already shared
+  const alreadyShared = meal.source_meal_id
+    || SHARED_MEALS.some(s => s.id === mealId || s.id === meal.source_meal_id);
+
+  document.getElementById("action-footer").innerHTML = `
+    <button class="btn btn-outline" onclick="closeModal('modal-action')">Close</button>
+    ${alreadyShared
+      ? `<span style="font-size:12px;color:var(--ink-soft)">🌐 Already in library</span>`
+      : `<button class="btn btn-outline" onclick="shareExistingMealToLibrary('${mealId}',this)">🌐 Share to Library</button>`
+    }`;
 
   document.getElementById("modal-action").classList.add("open");
+}
+
+// ── Share an existing personal meal to the library ────────────────
+async function shareExistingMealToLibrary(mealId, btnEl) {
+  const meal = ML[mealId];
+  if (!meal) return;
+
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = "Sharing…"; }
+
+  const sharedId = await shareToLibraryDB({ ...meal, id: mealId });
+
+  if (sharedId) {
+    // Tag the personal meal with source_meal_id so badge appears
+    meal.source_meal_id = sharedId;
+    ML = buildLookup();
+    await saveOneMealToDB(meal);
+
+    // Update the footer in place
+    const footer = document.getElementById("action-footer");
+    if (footer) {
+      footer.innerHTML = `
+        <button class="btn btn-outline" onclick="closeModal('modal-action')">Close</button>
+        <span style="font-size:12px;color:var(--green);font-weight:500">🌐 Shared to library ✓</span>`;
+    }
+    // Refresh plan badges if a plan is showing
+    if (currentPlan) renderPlan(currentPlan);
+    // Invalidate library cache
+    window._libraryLoaded = false;
+  } else {
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = "🌐 Share to Library"; }
+    alert("Could not share — please try again.");
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
