@@ -1166,6 +1166,11 @@ function renderConfirmedPlanView(week) {
 
 async function initApp() {
   // _activeToken is already set by showApp() before this is called.
+  // Reset in-memory state so stale data from a previous session never leaks.
+  MEALS = []; ML = buildLookup();
+  thumbedDown = new Set();
+  confirmedWeeks = [];
+
   setSyncStatus("syncing");
 
   const results = await Promise.all([
