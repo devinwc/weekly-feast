@@ -2371,18 +2371,22 @@ async function shareToLibraryDB(meal) {
     || currentUser?.email?.split("@")[0]
     || "Anonymous";
 
+  // Always generate a fresh shared ID so short personal IDs (b1, d1 etc.)
+  // never conflict with existing shared_meals rows.
+  const sharedId = `sl_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
+  const mealData = { ...meal, id: sharedId };
+
   const row = {
-    id: meal.id,
-    data: meal,
+    id: sharedId,
+    data: mealData,
     contributed_by: currentUser?.id,
     contributor_name: contributorName,
   };
 
   const ok = await sbFetch("POST", "shared_meals", [row]);
   if (ok) {
-    // Add to local cache
-    SHARED_MEALS.unshift({ id: meal.id, data: meal, contributor_name: contributorName });
-    return meal.id;
+    SHARED_MEALS.unshift({ id: sharedId, data: mealData, contributor_name: contributorName });
+    return sharedId;
   }
   return null;
 }
