@@ -309,6 +309,43 @@
   .btn-signout { font-size:11px; color:var(--ink-soft); background:none; border:none;
                  cursor:pointer; padding:0; margin-left:2px; }
   .btn-signout:hover { color:var(--red); }
+
+  /* ── RECIPE LIBRARY ───────────────────────────────────────────── */
+  .library-toolbar { display:flex; gap:10px; align-items:center; margin-bottom:20px; flex-wrap:wrap; }
+  .library-search  { flex:1; min-width:180px; padding:9px 12px; border:1.5px solid var(--rule);
+    border-radius:8px; font-family:var(--sans); font-size:13px; background:var(--paper); color:var(--ink); }
+  .library-search:focus { outline:none; border-color:var(--amber); }
+  .library-filter  { padding:9px 10px; border:1.5px solid var(--rule); border-radius:8px;
+    font-family:var(--sans); font-size:13px; background:var(--paper); color:var(--ink); cursor:pointer; }
+  .library-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }
+  .library-card { background:var(--paper); border:1px solid var(--rule); border-radius:var(--radius);
+    box-shadow:var(--shadow); overflow:hidden; display:flex; flex-direction:column; }
+  .library-card-body { padding:14px 16px; flex:1; }
+  .library-card-name { font-size:14px; font-weight:600; margin-bottom:4px; color:var(--ink); line-height:1.3; }
+  .library-card-meta { font-size:11px; color:var(--ink-soft); display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
+  .library-card-contributor { font-size:11px; color:var(--ink-soft); margin-top:6px; }
+  .library-card-contributor span { color:var(--amber); font-weight:500; }
+  .library-card-footer { padding:10px 16px; border-top:1px solid var(--rule);
+    display:flex; align-items:center; justify-content:space-between; gap:8px; background:var(--cream); }
+  .library-card.already-added .library-card-footer { background:var(--green-lt); }
+  .btn-add-to-mine { padding:6px 14px; border-radius:7px; border:1.5px solid var(--ink);
+    background:var(--ink); color:var(--cream); font-family:var(--sans); font-size:12px;
+    font-weight:500; cursor:pointer; transition:all var(--t); white-space:nowrap; }
+  .btn-add-to-mine:hover { background:#3C3833; }
+  .btn-add-to-mine.added { background:var(--green); border-color:var(--green); cursor:default; }
+  .library-empty { text-align:center; padding:60px 20px; color:var(--ink-soft); }
+  .library-empty .icon { font-size:40px; margin-bottom:12px; }
+  .library-empty h3 { font-family:var(--serif); font-size:20px; margin-bottom:6px; color:var(--ink); }
+  /* Share-to-library checkbox on Add Meal form */
+  .share-toggle { display:flex; align-items:center; gap:10px; padding:12px 14px;
+    border:1.5px solid var(--rule); border-radius:9px; cursor:pointer;
+    transition:all var(--t); margin-bottom:14px; background:var(--paper); }
+  .share-toggle:hover { border-color:var(--amber); background:var(--amber-lt); }
+  .share-toggle input { width:16px; height:16px; accent-color:var(--amber); cursor:pointer; flex-shrink:0; }
+  .share-toggle-text .label { font-size:13px; font-weight:500; color:var(--ink); }
+  .share-toggle-text .desc  { font-size:11px; color:var(--ink-soft); margin-top:1px; }
+  /* Source badge on personal meals */
+  .badge-shared { background:var(--blue-lt); color:var(--blue); border:1px solid #BFDBFE; }
 </style>
 </head>
 <body>
@@ -447,6 +484,7 @@
     <button class="tab active" id="tab-plan"    onclick="switchTab('plan')">Meal Plan</button>
     <button class="tab"        id="tab-grocery" onclick="switchTab('grocery')">Grocery List</button>
     <button class="tab"        id="tab-history" onclick="switchTab('history')">History</button>
+    <button class="tab"        id="tab-library" onclick="switchTab('library')">📚 Recipe Library</button>
   </div>
 
   <!-- Plan Panel -->
@@ -589,12 +627,45 @@
         </div>
       </div>
       <button class="btn btn-ghost" style="margin-bottom:20px" onclick="addIngRow()">+ Add ingredient</button>
+      <label class="share-toggle">
+        <input type="checkbox" id="new-share-library">
+        <div class="share-toggle-text">
+          <div class="label">🌐 Share to Recipe Library</div>
+          <div class="desc">Add this recipe to the community library so others can use it too</div>
+        </div>
+      </label>
       <div style="display:flex;gap:10px">
         <button class="btn btn-primary" onclick="submitNewMeal()">Save Meal</button>
         <button class="btn btn-ghost"   onclick="clearMealForm()">Clear</button>
       </div>
       <div id="add-meal-feedback" style="margin-top:12px;font-size:13px"></div>
     </div>
+  </div>
+
+
+  <!-- Recipe Library Panel -->
+  <div class="panel" id="panel-library">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+      <div class="section-title">📚 Recipe Library</div>
+      <span style="font-size:13px;color:var(--ink-soft)"><strong id="library-count">0</strong> shared recipes</span>
+    </div>
+    <div class="library-toolbar">
+      <input class="library-search" id="library-search" type="text"
+        placeholder="Search recipes…" oninput="renderLibrary()">
+      <select class="library-filter" id="library-filter-type" onchange="renderLibrary()">
+        <option value="">All types</option>
+        <option value="breakfast">Breakfast</option>
+        <option value="lunch">Lunch</option>
+        <option value="dinner">Dinner</option>
+      </select>
+      <select class="library-filter" id="library-filter-time" onchange="renderLibrary()">
+        <option value="">Any time</option>
+        <option value="30">Under 30 min</option>
+        <option value="45">Under 45 min</option>
+        <option value="60">Under 60 min</option>
+      </select>
+    </div>
+    <div class="library-grid" id="library-grid"></div>
   </div>
 
 </div>
@@ -1648,6 +1719,7 @@ function renderPlan(plan) {
               ${nameInner}
               ${isNew   ? '<span class="badge badge-new" style="margin-left:3px">New</span>'    : ""}
               ${isManual? '<span class="badge badge-manual" style="margin-left:3px">Manual</span>': ""}
+              ${meal.source_meal_id ? '<span class="badge badge-shared" style="margin-left:3px" title="From Recipe Library">🌐</span>' : ""}
             </span>
           </div>
           <div class="meal-actions">
@@ -1731,9 +1803,13 @@ function switchTab(t) {
   document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
   document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));
   const tabEl = document.getElementById("tab-"+t);
-  if (tabEl) tabEl.classList.add("active");   // tab-add was removed; panel still works
+  if (tabEl) tabEl.classList.add("active");
   document.getElementById("panel-"+t).classList.add("active");
   if (t === "history") renderHistory();
+  if (t === "library") {
+    if (!window._libraryLoaded) { window._libraryLoaded = true; loadSharedMeals(); }
+    else renderLibrary();
+  }
 }
 
 function toggleItem(key,el) {
@@ -1902,16 +1978,38 @@ async function submitNewMeal() {
     const c=parseFloat(row.querySelector("[data-ing='cost']").value)||0;
     if(n){ ings.push({name:n,quantity:q||null,estimatedCost:c}); cost+=c; }
   });
-  const m={id:`custom_${Date.now()}`,name,mealType:type,kidApprovalScore:kid,prepTime:prep,cookTime:cook,totalTime:prep+cook,totalCostEstimate:Math.round(cost*100)/100,tags,recipeLink:link,thumbedDown:false,lastServed:null,ingredients:ings};
+  const shareToLibrary = document.getElementById("new-share-library")?.checked;
+  const mealId = `custom_${Date.now()}`;
+
+  // If sharing, save to shared_meals first and use that ID as source_meal_id
+  let sourceMealId = null;
+  if (shareToLibrary) {
+    sourceMealId = await shareToLibraryDB({ id: mealId, name, mealType: type,
+      kidApprovalScore: kid, prepTime: prep, cookTime: cook,
+      totalTime: prep+cook, totalCostEstimate: Math.round(cost*100)/100,
+      tags, recipeLink: link, ingredients: ings });
+  }
+
+  const m = { id: mealId, name, mealType: type, kidApprovalScore: kid,
+    prepTime: prep, cookTime: cook, totalTime: prep+cook,
+    totalCostEstimate: Math.round(cost*100)/100, tags, recipeLink: link,
+    thumbedDown: false, lastServed: null, ingredients: ings,
+    ...(sourceMealId ? { source_meal_id: sourceMealId } : {}) };
+
   MEALS.push(m); ML=buildLookup();
   withSyncStatus(() => saveOneMealToDB(m));
-  fb.innerHTML=`<span style="color:var(--green)">✓ "${name}" added!</span>`;
+  const shareMsg = shareToLibrary && sourceMealId ? " and shared to the Recipe Library 🌐" : "";
+  fb.innerHTML=`<span style="color:var(--green)">✓ "${name}" added${shareMsg}!</span>`;
   clearMealForm(); setTimeout(()=>fb.innerHTML="",3000);
+  // Invalidate library cache so it reloads next visit
+  window._libraryLoaded = false;
 }
 
 function clearMealForm() {
   ["new-name","new-recipe-link","new-tags","new-import-url"].forEach(id=>document.getElementById(id).value="");
   document.getElementById("new-import-status").textContent = "";
+  const shareEl = document.getElementById("new-share-library");
+  if (shareEl) shareEl.checked = false;
   document.getElementById("new-type").value="dinner";
   document.getElementById("new-kid").value="3";
   document.getElementById("new-prep").value="10";
@@ -2203,6 +2301,182 @@ function deleteConfirmedWeek(weekId) {
 }
 
 // ── Init ──────────────────────────────────────────────────────────
+
+
+// ═══════════════════════════════════════════════════════════════════
+// RECIPE LIBRARY — shared community meal database
+// ═══════════════════════════════════════════════════════════════════
+
+let SHARED_MEALS = []; // populated by loadSharedMeals()
+
+// ── DB: load all shared meals ─────────────────────────────────────
+async function loadSharedMeals() {
+  const grid = document.getElementById("library-grid");
+  if (grid) grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--ink-soft);font-size:13px">Loading recipes…</div>';
+
+  const remote = await sbFetch("GET", "shared_meals", null,
+    "?select=id,data,contributor_name,created_at&order=created_at.desc");
+
+  if (remote) {
+    SHARED_MEALS = remote;
+  } else {
+    SHARED_MEALS = [];
+  }
+  renderLibrary();
+}
+
+// ── DB: share a meal to the library ──────────────────────────────
+async function shareToLibraryDB(meal) {
+  const contributorName = currentUser?.user_metadata?.display_name
+    || currentUser?.email?.split("@")[0]
+    || "Anonymous";
+
+  const row = {
+    id: meal.id,
+    data: meal,
+    contributed_by: currentUser?.id,
+    contributor_name: contributorName,
+  };
+
+  const ok = await sbFetch("POST", "shared_meals", [row]);
+  if (ok) {
+    // Add to local cache
+    SHARED_MEALS.unshift({ id: meal.id, data: meal, contributor_name: contributorName });
+    return meal.id;
+  }
+  return null;
+}
+
+// ── DB: add a shared meal to personal database ────────────────────
+async function addSharedMealToMine(sharedMealId) {
+  const entry = SHARED_MEALS.find(s => s.id === sharedMealId);
+  if (!entry) return;
+
+  // Check if already in personal DB
+  if (MEALS.some(m => m.source_meal_id === sharedMealId || m.id === sharedMealId)) {
+    renderLibrary(); return;
+  }
+
+  const base = entry.data;
+  const newId = `shared_${Date.now()}`;
+  const m = { ...base, id: newId, source_meal_id: sharedMealId,
+    thumbedDown: false, lastServed: null };
+
+  MEALS.push(m); ML = buildLookup();
+  await withSyncStatus(() => saveOneMealToDB(m));
+
+  // Re-render so button updates
+  renderLibrary();
+}
+
+// ── Render the library grid ───────────────────────────────────────
+function renderLibrary() {
+  const grid  = document.getElementById("library-grid");
+  const count = document.getElementById("library-count");
+  if (!grid) return;
+
+  const query  = (document.getElementById("library-search")?.value || "").toLowerCase().trim();
+  const typeF  = document.getElementById("library-filter-type")?.value  || "";
+  const timeF  = parseInt(document.getElementById("library-filter-time")?.value) || 0;
+
+  const personalSourceIds = new Set(MEALS.map(m => m.source_meal_id).filter(Boolean));
+  const personalIds       = new Set(MEALS.map(m => m.id));
+
+  let filtered = SHARED_MEALS.filter(entry => {
+    const m = entry.data;
+    if (typeF && m.mealType !== typeF) return false;
+    if (timeF && (m.totalTime || 0) > timeF) return false;
+    if (query) {
+      const hay = [m.name, ...(m.tags||[]), m.mealType].join(" ").toLowerCase();
+      if (!hay.includes(query)) return false;
+    }
+    return true;
+  });
+
+  if (count) count.textContent = SHARED_MEALS.length;
+
+  if (!filtered.length) {
+    grid.innerHTML = `<div class="library-empty" style="grid-column:1/-1">
+      <div class="icon">📭</div>
+      <h3>${SHARED_MEALS.length === 0 ? "No shared recipes yet" : "No matches"}</h3>
+      <p>${SHARED_MEALS.length === 0
+        ? "Be the first! Add a meal and check \"Share to Recipe Library\"."
+        : "Try adjusting your filters."}</p>
+    </div>`;
+    return;
+  }
+
+  grid.innerHTML = filtered.map(entry => {
+    const m = entry.data;
+    const alreadyAdded = personalSourceIds.has(entry.id) || personalIds.has(entry.id);
+    const tags = (m.tags || []).slice(0, 3).map(t =>
+      `<span style="background:var(--cream);border:1px solid var(--rule);border-radius:20px;padding:1px 7px;font-size:10px;color:var(--ink-soft)">${t}</span>`
+    ).join("");
+
+    return `<div class="library-card${alreadyAdded ? " already-added" : ""}">
+      <div class="library-card-body">
+        <div class="library-card-name">${m.name}</div>
+        <div class="library-card-meta">
+          <span>${m.mealType.charAt(0).toUpperCase()+m.mealType.slice(1)}</span>
+          ${m.totalTime ? `<span>⏱ ${m.totalTime}min</span>` : ""}
+          ${m.totalCostEstimate ? `<span>💰 $${m.totalCostEstimate}</span>` : ""}
+          ${m.kidApprovalScore ? `<span>${"⭐".repeat(m.kidApprovalScore)}</span>` : ""}
+        </div>
+        ${tags ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px">${tags}</div>` : ""}
+        ${m.recipeLink ? `<a href="${m.recipeLink}" target="_blank" rel="noopener"
+          style="font-size:11px;color:var(--amber);text-decoration:none;border-bottom:1px dotted var(--amber)">View recipe ↗</a>` : ""}
+        <div class="library-card-contributor">Shared by <span>${entry.contributor_name || "Anonymous"}</span></div>
+      </div>
+      <div class="library-card-footer">
+        ${alreadyAdded
+          ? `<span style="font-size:12px;color:var(--green);font-weight:500">✓ In your database</span>`
+          : `<button class="btn-add-to-mine" onclick="addSharedMealToMine('${entry.id}')">+ Add to My Meals</button>`}
+        <button class="btn btn-ghost" style="padding:4px 8px;font-size:11px"
+          onclick="openLibraryMealDetail('${entry.id}')">View</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+// ── Library meal detail modal ─────────────────────────────────────
+function openLibraryMealDetail(sharedId) {
+  const entry = SHARED_MEALS.find(s => s.id === sharedId);
+  if (!entry) return;
+  const m = entry.data;
+
+  document.getElementById("action-title").textContent = m.name;
+  document.getElementById("action-subtitle").textContent =
+    `${m.mealType.charAt(0).toUpperCase()+m.mealType.slice(1)} · ${m.totalTime||"?"}min · $${m.totalCostEstimate||"?"}`;
+
+  const ings = (m.ingredients||[]);
+  const ingHTML = ings.length
+    ? `<div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
+        ${ings.map(i=>`
+          <div style="display:flex;align-items:baseline;gap:10px;padding:7px 10px;background:var(--cream);border-radius:7px;">
+            <span style="font-size:13px;font-weight:500;flex:1">${i.name}</span>
+            <span style="font-size:12px;color:var(--ink-soft)">${i.quantity||""}</span>
+            ${i.estimatedCost ? `<span style="font-size:11px;color:var(--ink-soft);width:40px;text-align:right">$${(i.estimatedCost).toFixed(2)}</span>` : ""}
+          </div>`).join("")}
+      </div>`
+    : `<p style="font-size:13px;color:var(--ink-soft);font-style:italic">No ingredients listed.</p>`;
+
+  const alreadyAdded = MEALS.some(pm => pm.source_meal_id === sharedId || pm.id === sharedId);
+
+  document.getElementById("action-body").innerHTML = `
+    <p style="font-size:12px;color:var(--ink-soft);margin-bottom:14px">
+      Shared by <strong style="color:var(--amber)">${entry.contributor_name || "Anonymous"}</strong>
+    </p>
+    <p style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:8px">Ingredients</p>
+    ${ingHTML}`;
+
+  document.getElementById("action-footer").innerHTML = alreadyAdded
+    ? `<span style="font-size:12px;color:var(--green);font-weight:500">✓ Already in your database</span>
+       <button class="btn btn-outline" onclick="closeModal('modal-action')">Close</button>`
+    : `<button class="btn btn-outline" onclick="closeModal('modal-action')">Close</button>
+       <button class="btn btn-primary" onclick="addSharedMealToMine('${sharedId}');closeModal('modal-action')">+ Add to My Meals</button>`;
+
+  document.getElementById("modal-action").classList.add("open");
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // RECIPE IMPORT (Add Meal panel)
