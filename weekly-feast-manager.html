@@ -259,6 +259,7 @@
     <button class="tab active" id="tab-meals"     onclick="switchTab('meals')">Meal Database</button>
     <button class="tab"        id="tab-feedback"  onclick="switchTab('feedback')">Feedback</button>
     <button class="tab"        id="tab-exclusions"onclick="switchTab('exclusions')">Exclusions</button>
+    <button class="tab"        id="tab-library"   onclick="switchTab('library')">📚 Recipe Library</button>
   </div>
 
   <!-- ── MEALS ── -->
@@ -433,6 +434,25 @@
     <div class="excl-list" id="excl-list"></div>
   </div>
 
+  <!-- ── RECIPE LIBRARY ── -->
+  <div class="panel" id="panel-library">
+    <div class="io-bar" style="margin-bottom:20px">
+      <span>📚 <strong id="library-count">0</strong> shared recipes</span>
+      <span style="color:var(--rule)">|</span>
+      <span style="color:var(--ink-soft)">Manage community-shared recipes. You can delete any entry.</span>
+    </div>
+    <div class="toolbar" style="margin-bottom:16px">
+      <input class="search-input" id="library-search" placeholder="Search shared recipes…" oninput="renderLibraryTable()">
+      <select class="filter-select" id="library-filter-type" onchange="renderLibraryTable()">
+        <option value="">All types</option>
+        <option value="breakfast">Breakfast</option>
+        <option value="lunch">Lunch</option>
+        <option value="dinner">Dinner</option>
+      </select>
+    </div>
+    <div id="library-table-wrap"></div>
+  </div>
+
 </div><!-- /app -->
 
 <!-- Toast container -->
@@ -528,41 +548,12 @@ async function signOut() {
   await sbClient.auth.signOut();
 }
 
-function showApp(user) {
-  currentUser = user;
-  const name    = user.user_metadata?.display_name || user.email.split("@")[0];
-  const initial = name.charAt(0).toUpperCase();
-  document.getElementById("user-display-name").textContent = name;
-  document.getElementById("user-avatar").textContent = initial;
-  document.getElementById("user-pill").style.display = "inline-flex";
-  document.getElementById("auth-screen").classList.add("hidden");
-  document.getElementById("main-app").style.display = "";
-  sbClient.auth.getSession().then(({ data: { session } }) => {
-    if (session) _activeToken = session.access_token;
-  });
-  if (!window._managerInited) { window._managerInited = true; initManager(); }
-}
-
-function showAuthScreen() {
-  currentUser = null;
-  document.getElementById("auth-screen").classList.remove("hidden");
-  document.getElementById("main-app").style.display = "none";
-  document.getElementById("user-pill").style.display = "none";
-}
-
-sbClient.auth.onAuthStateChange((event, session) => {
-  if (session?.user) { showApp(session.user); }
-  else               { showAuthScreen(); }
-});
-
 // ═══════════════════════════════════════════════════════════════════
-// SUPABASE — same project as the main app, same tables
+// SUPABASE HEADERS — token set before any DB call fires
 // ═══════════════════════════════════════════════════════════════════
 
 let _activeToken = SB_KEY;
-sbClient.auth.onAuthStateChange((_, session) => {
-  _activeToken = session?.access_token || SB_KEY;
-});
+
 function getSBHeaders() {
   return {
     "Content-Type":  "application/json",
@@ -571,7 +562,45 @@ function getSBHeaders() {
     "Prefer":        "resolution=merge-duplicates",
   };
 }
-const SB_HEADERS = new Proxy({}, { get: (_, k) => getSBHeaders()[k] });
+
+function showApp(user, token) {
+  currentUser = user;
+  _activeToken = token; // set BEFORE initManager fires any DB calls
+  const name    = user.user_metadata?.display_name || user.email.split("@")[0];
+  const initial = name.charAt(0).toUpperCase();
+  document.getElementById("user-display-name").textContent = name;
+  document.getElementById("user-avatar").textContent = initial;
+  document.getElementById("user-pill").style.display = "inline-flex";
+  document.getElementById("auth-screen").classList.add("hidden");
+  document.getElementById("main-app").style.display = "";
+  if (!window._managerInited) { window._managerInited = true; initManager(); }
+}
+
+function showAuthScreen() {
+  currentUser = null;
+  _activeToken = SB_KEY;
+  document.getElementById("auth-screen").classList.remove("hidden");
+  document.getElementById("main-app").style.display = "none";
+  document.getElementById("user-pill").style.display = "none";
+}
+
+// Single startup point — getSession() is source of truth
+(async () => {
+  const { data: { session } } = await sbClient.auth.getSession();
+  if (session?.user) {
+    showApp(session.user, session.access_token);
+  } else {
+    showAuthScreen();
+  }
+})();
+
+// Handle sign-in/out after initial load
+sbClient.auth.onAuthStateChange((event, session) => {
+  if (event === "INITIAL_SESSION") return;
+  _activeToken = session?.access_token || SB_KEY;
+  if (session?.user) { showApp(session.user, session.access_token); }
+  else               { showAuthScreen(); }
+});
 
 async function sbFetch(method, table, body = null, query = "") {
   try {
@@ -902,6 +931,10 @@ function switchTab(t) {
   if (t==="meals")      renderMealTable();
   if (t==="feedback")   renderFeedback();
   if (t==="exclusions") renderExclusions();
+  if (t==="library") {
+    if (!window._libraryLoaded) { window._libraryLoaded = true; loadSharedMeals(); }
+    else renderLibraryTable();
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1370,15 +1403,104 @@ function toast(msg, type="") {
 // ── Init ──────────────────────────────────────────────────────────
 // Called by showApp() once auth resolves — not run directly on load.
 async function initManager() {
-  const { data: { session } } = await sbClient.auth.getSession();
-  if (!session) { showAuthScreen(); return; }
-  if (session) _activeToken = session.access_token;
+  // _activeToken already set by showApp() before this is called
   await loadAll();
   await loadAnthropicKey(); // load silently on startup so first import is instant
   renderMealTable();
   renderFeedback();
   renderExclusions();
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// RECIPE LIBRARY — manage shared_meals table
+// ═══════════════════════════════════════════════════════════════════
+
+let SHARED_MEALS_MGR = [];
+
+async function loadSharedMeals() {
+  const wrap = document.getElementById("library-table-wrap");
+  if (wrap) wrap.innerHTML = '<p style="color:var(--ink-soft);font-size:13px;padding:20px">Loading…</p>';
+
+  const remote = await sbFetch("GET", "shared_meals", null,
+    "?select=id,data,contributor_name,contributed_by,created_at&order=created_at.desc");
+
+  SHARED_MEALS_MGR = remote || [];
+  renderLibraryTable();
+}
+
+async function deleteSharedMeal(id) {
+  if (!confirm("Delete this shared recipe from the library? This cannot be undone.")) return;
+  const ok = await sbFetch("DELETE", "shared_meals", null, `?id=eq.${id}`);
+  if (ok !== null) {
+    SHARED_MEALS_MGR = SHARED_MEALS_MGR.filter(s => s.id !== id);
+    renderLibraryTable();
+    toast("Shared recipe deleted", "success");
+  } else {
+    toast("Could not delete — check your permissions", "error");
+  }
+}
+
+function renderLibraryTable() {
+  const wrap  = document.getElementById("library-table-wrap");
+  const count = document.getElementById("library-count");
+  if (!wrap) return;
+
+  const query  = (document.getElementById("library-search")?.value || "").toLowerCase();
+  const typeF  = document.getElementById("library-filter-type")?.value || "";
+
+  const filtered = SHARED_MEALS_MGR.filter(entry => {
+    const m = entry.data || {};
+    if (typeF && m.mealType !== typeF) return false;
+    if (query) {
+      const hay = [m.name, ...(m.tags||[]), entry.contributor_name||""].join(" ").toLowerCase();
+      if (!hay.includes(query)) return false;
+    }
+    return true;
+  });
+
+  if (count) count.textContent = SHARED_MEALS_MGR.length;
+
+  if (!filtered.length) {
+    wrap.innerHTML = `<p style="color:var(--ink-soft);font-size:13px;padding:20px;text-align:center">
+      ${SHARED_MEALS_MGR.length === 0 ? "No shared recipes yet." : "No matches."}</p>`;
+    return;
+  }
+
+  const rows = filtered.map(entry => {
+    const m = entry.data || {};
+    const date = entry.created_at
+      ? new Date(entry.created_at).toLocaleDateString(undefined, { month:"short", day:"numeric", year:"numeric" })
+      : "—";
+    return `<tr>
+      <td style="font-weight:500">${m.name || "—"}</td>
+      <td>${m.mealType ? m.mealType.charAt(0).toUpperCase()+m.mealType.slice(1) : "—"}</td>
+      <td>${m.totalTime ? m.totalTime+"min" : "—"}</td>
+      <td>${entry.contributor_name || "Anonymous"}</td>
+      <td>${date}</td>
+      <td style="text-align:right">
+        ${m.recipeLink ? `<a href="${m.recipeLink}" target="_blank" rel="noopener"
+          class="btn btn-ghost btn-sm" style="margin-right:6px">↗ Link</a>` : ""}
+        <button class="btn btn-danger btn-sm" onclick="deleteSharedMeal('${entry.id}')">Delete</button>
+      </td>
+    </tr>`;
+  }).join("");
+
+  wrap.innerHTML = `
+    <table class="meal-table" style="width:100%">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Time</th>
+          <th>Contributor</th>
+          <th>Shared</th>
+          <th style="text-align:right">Actions</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
 </script>
 </body>
 </html>
