@@ -556,12 +556,12 @@ sbClient.auth.onAuthStateChange((event, session) => {
 // SUPABASE — same project as the main app, same tables
 // ═══════════════════════════════════════════════════════════════════
 
-let _cachedToken = null;
-sbClient.auth.onAuthStateChange((_, session) => {
-  _cachedToken = session?.access_token || null;
-});
 function getSBHeaders() {
-  const token = _cachedToken || SB_KEY;
+  let token = SB_KEY;
+  try {
+    const raw = localStorage.getItem("sb-ltcukmqocxwfbvlsovnj-auth-token");
+    if (raw) token = JSON.parse(raw)?.access_token || SB_KEY;
+  } catch {}
   return {
     "Content-Type":  "application/json",
     "apikey":        SB_KEY,

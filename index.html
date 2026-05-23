@@ -898,13 +898,19 @@ const TIME_BUDGETS = {
 // SB_URL and SB_KEY defined in auth block above.
 // SB_HEADERS is a function so it always carries the current session token.
 // Returns headers with the current user's JWT so RLS policies apply correctly.
-// Falls back to anon key if no session (shouldn't happen since app is auth-gated).
-let _cachedToken = null;
-sbClient.auth.onAuthStateChange((_, session) => {
-  _cachedToken = session?.access_token || null;
-});
+// Reads the session synchronously from sbClient so it's always current —
+// no race condition between onAuthStateChange and the first DB call.
 function getSBHeaders() {
-  const token = _cachedToken || SB_KEY;
+  // sbClient.auth.getSession() is async, but the session object is also
+  // available synchronously via the internal storage key Supabase uses.
+  // We pull it directly so this function stays synchronous.
+  const raw = localStorage.getItem(
+    "sb-" + SB_URL.replace("https://","").split(".")[0] + "-auth-token"
+  );
+  let token = SB_KEY;
+  if (raw) {
+    try { token = JSON.parse(raw)?.access_token || SB_KEY; } catch {}
+  }
   return {
     "Content-Type":  "application/json",
     "apikey":        SB_KEY,
