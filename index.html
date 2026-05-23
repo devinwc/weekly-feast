@@ -814,6 +814,9 @@ function showApp(user, token) {
 function showAuthScreen() {
   currentUser = null;
   _activeToken = SB_KEY;
+  // Reset init guard so the next user who signs in gets a fresh initApp run
+  window._appInited = false;
+  window._libraryLoaded = false;
   document.getElementById("auth-screen").classList.remove("hidden");
   document.getElementById("main-app").style.display = "none";
   document.getElementById("user-pill").style.display = "none";
