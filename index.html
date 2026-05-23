@@ -917,14 +917,14 @@ function getSBHeaders() {
     "Prefer":        "resolution=merge-duplicates",
   };
 }
-const SB_HEADERS = new Proxy({}, { get: (_, k) => getSBHeaders()[k] });
+// SB_HEADERS proxy removed — getSBHeaders() called directly in sbFetch instead.
 
 /** Generic Supabase REST fetch — returns parsed JSON or null on error. */
 async function sbFetch(method, table, body = null, query = "") {
   try {
     const res = await fetch(`${SB_URL}/rest/v1/${table}${query}`, {
       method,
-      headers: SB_HEADERS,
+      headers: getSBHeaders(),
       body: body ? JSON.stringify(body) : undefined,
     });
     if (!res.ok) { console.warn("Supabase error", res.status, await res.text()); return null; }
