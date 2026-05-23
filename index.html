@@ -794,39 +794,47 @@ async function signOut() {
   // onAuthStateChange will handle hiding the app
 }
 
-// ── Show / hide app based on auth state ───────────────────────────
-function showApp(user) {
+// ── Show / hide app ───────────────────────────────────────────────
+function showApp(user, token) {
   currentUser = user;
+  _activeToken = token; // set BEFORE initApp fires any DB calls
 
-  // Update user pill
   const name    = user.user_metadata?.display_name || user.email.split("@")[0];
   const initial = name.charAt(0).toUpperCase();
   document.getElementById("user-display-name").textContent = name;
   document.getElementById("user-avatar").textContent = initial;
   document.getElementById("user-pill").style.display = "inline-flex";
 
-  // Show app, hide auth screen
   document.getElementById("auth-screen").classList.add("hidden");
   document.getElementById("main-app").style.display = "";
 
-  // Boot the app — guard against re-running on token refresh.
-  // initApp() will await getSession() and set _activeToken before any DB calls.
   if (!window._appInited) { window._appInited = true; initApp(); }
 }
 
 function showAuthScreen() {
   currentUser = null;
+  _activeToken = SB_KEY;
   document.getElementById("auth-screen").classList.remove("hidden");
   document.getElementById("main-app").style.display = "none";
   document.getElementById("user-pill").style.display = "none";
 }
 
-// ── Listen for auth state changes ──────────────────────────────────
-sbClient.auth.onAuthStateChange((event, session) => {
-  // Always update the token first so getSBHeaders() is current
-  _activeToken = session?.access_token || SB_KEY;
+// ── Single startup point — getSession() is the source of truth ────
+// onAuthStateChange handles sign-in/out AFTER initial load.
+(async () => {
+  const { data: { session } } = await sbClient.auth.getSession();
   if (session?.user) {
-    showApp(session.user);
+    showApp(session.user, session.access_token);
+  } else {
+    showAuthScreen();
+  }
+})();
+
+// After initial load, onAuthStateChange handles sign-in / sign-out events.
+sbClient.auth.onAuthStateChange((event, session) => {
+  if (event === "INITIAL_SESSION") return; // already handled above
+  if (session?.user) {
+    showApp(session.user, session.access_token);
   } else {
     showAuthScreen();
   }
@@ -1169,11 +1177,7 @@ function renderConfirmedPlanView(week) {
 // ── APP INIT ───────────────────────────────────────────────────────
 
 async function initApp() {
-  // Await the session so _activeToken is set before any DB calls fire.
-  const { data: { session } } = await sbClient.auth.getSession();
-  if (!session) { showAuthScreen(); return; }
-  _activeToken = session.access_token;
-
+  // _activeToken is already set by showApp() before this is called.
   setSyncStatus("syncing");
 
   const results = await Promise.all([
