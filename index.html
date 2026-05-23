@@ -18,6 +18,7 @@
   }
 </script>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -251,10 +252,135 @@
   ::-webkit-scrollbar { width:5px; }
   ::-webkit-scrollbar-track { background:transparent; }
   ::-webkit-scrollbar-thumb { background:var(--rule); border-radius:99px; }
+
+  /* ── AUTH SCREEN ──────────────────────────────────────────────── */
+  #auth-screen {
+    position:fixed; inset:0; background:var(--cream); z-index:1000;
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  #auth-screen.hidden { display:none; }
+  .auth-card {
+    background:var(--paper); border:1px solid var(--rule); border-radius:16px;
+    box-shadow:0 8px 40px rgba(28,25,23,.12); width:100%; max-width:400px;
+    overflow:hidden;
+  }
+  .auth-card-header {
+    padding:32px 32px 24px; border-bottom:1px solid var(--rule); text-align:center;
+  }
+  .auth-logo { font-size:32px; margin-bottom:10px; }
+  .auth-card-header h1 { font-family:var(--serif); font-size:26px; font-weight:700; margin-bottom:4px; }
+  .auth-card-header p  { font-size:13px; color:var(--ink-soft); }
+  .auth-card-body { padding:24px 32px 32px; }
+  .auth-tabs { display:flex; gap:2px; margin-bottom:22px; background:var(--rule); padding:3px; border-radius:10px; }
+  .auth-tab  { flex:1; padding:7px; border-radius:7px; font-size:13px; font-weight:500; cursor:pointer;
+               border:none; background:transparent; color:var(--ink-soft); font-family:var(--sans);
+               transition:all var(--t); text-align:center; }
+  .auth-tab.active { background:var(--paper); color:var(--ink); box-shadow:0 1px 4px rgba(28,25,23,.1); }
+  .auth-form-group { margin-bottom:14px; }
+  .auth-label { font-size:11px; font-weight:600; color:var(--ink-soft); margin-bottom:5px;
+                display:block; letter-spacing:.04em; text-transform:uppercase; }
+  .auth-input { width:100%; padding:10px 12px; border:1.5px solid var(--rule); border-radius:8px;
+                font-family:var(--sans); font-size:13px; color:var(--ink); background:var(--cream);
+                transition:border-color var(--t); }
+  .auth-input:focus { outline:none; border-color:var(--amber); background:var(--paper); }
+  .auth-btn-primary { width:100%; padding:11px; border-radius:8px; border:none;
+                      background:var(--ink); color:var(--cream); font-family:var(--sans);
+                      font-size:14px; font-weight:500; cursor:pointer; transition:background var(--t);
+                      margin-bottom:10px; }
+  .auth-btn-primary:hover { background:#3C3833; }
+  .auth-btn-primary:disabled { opacity:.5; pointer-events:none; }
+  .auth-divider { display:flex; align-items:center; gap:10px; margin:14px 0; }
+  .auth-divider span { font-size:11px; color:var(--ink-soft); white-space:nowrap; }
+  .auth-divider::before, .auth-divider::after { content:""; flex:1; height:1px; background:var(--rule); }
+  .auth-btn-google { width:100%; padding:10px; border-radius:8px; border:1.5px solid var(--rule);
+                     background:var(--paper); color:var(--ink); font-family:var(--sans);
+                     font-size:13px; font-weight:500; cursor:pointer; transition:all var(--t);
+                     display:flex; align-items:center; justify-content:center; gap:8px; }
+  .auth-btn-google:hover { border-color:var(--ink-soft); background:var(--cream); }
+  .auth-error { font-size:12px; color:var(--red); min-height:18px; margin-bottom:8px; text-align:center; }
+  .auth-success { font-size:12px; color:var(--green); min-height:18px; margin-bottom:8px; text-align:center; }
+  /* User pill in header */
+  .user-pill { display:inline-flex; align-items:center; gap:7px; padding:5px 10px 5px 8px;
+               border-radius:20px; border:1px solid var(--rule); background:var(--paper);
+               font-size:12px; font-weight:500; color:var(--ink-soft); cursor:default; }
+  .user-avatar { width:22px; height:22px; border-radius:50%; background:var(--amber-lt);
+                 border:1.5px solid #FDE68A; display:flex; align-items:center; justify-content:center;
+                 font-size:11px; font-weight:700; color:var(--amber); }
+  .btn-signout { font-size:11px; color:var(--ink-soft); background:none; border:none;
+                 cursor:pointer; padding:0; margin-left:2px; }
+  .btn-signout:hover { color:var(--red); }
 </style>
 </head>
 <body>
-<div class="app">
+
+<!-- ── AUTH SCREEN ─────────────────────────────────────────────── -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-card-header">
+      <div class="auth-logo">🍽</div>
+      <h1>Weekly Feast</h1>
+      <p>Plan your family meals, together.</p>
+    </div>
+    <div class="auth-card-body">
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tab-signin" onclick="authSwitchTab('signin')">Sign In</button>
+        <button class="auth-tab"        id="tab-signup" onclick="authSwitchTab('signup')">Create Account</button>
+      </div>
+
+      <!-- Sign In -->
+      <div id="auth-signin-form">
+        <div class="auth-form-group">
+          <label class="auth-label">Email</label>
+          <input class="auth-input" id="signin-email" type="email" placeholder="you@example.com"
+            onkeydown="if(event.key==='Enter')signIn()">
+        </div>
+        <div class="auth-form-group">
+          <label class="auth-label">Password</label>
+          <input class="auth-input" id="signin-password" type="password" placeholder="••••••••"
+            onkeydown="if(event.key==='Enter')signIn()">
+        </div>
+        <div class="auth-error" id="signin-error"></div>
+        <button class="auth-btn-primary" id="signin-btn" onclick="signIn()">Sign In</button>
+        <div class="auth-divider"><span>or</span></div>
+        <button class="auth-btn-google" onclick="signInWithGoogle()">
+          <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+          Continue with Google
+        </button>
+      </div>
+
+      <!-- Sign Up -->
+      <div id="auth-signup-form" style="display:none">
+        <div class="auth-form-group">
+          <label class="auth-label">Your Name</label>
+          <input class="auth-input" id="signup-name" type="text" placeholder="e.g. The Johnsons"
+            onkeydown="if(event.key==='Enter')signUp()">
+        </div>
+        <div class="auth-form-group">
+          <label class="auth-label">Email</label>
+          <input class="auth-input" id="signup-email" type="email" placeholder="you@example.com"
+            onkeydown="if(event.key==='Enter')signUp()">
+        </div>
+        <div class="auth-form-group">
+          <label class="auth-label">Password</label>
+          <input class="auth-input" id="signup-password" type="password" placeholder="Min. 6 characters"
+            onkeydown="if(event.key==='Enter')signUp()">
+        </div>
+        <div class="auth-error"   id="signup-error"></div>
+        <div class="auth-success" id="signup-success"></div>
+        <button class="auth-btn-primary" id="signup-btn" onclick="signUp()">Create Account</button>
+        <div class="auth-divider"><span>or</span></div>
+        <button class="auth-btn-google" onclick="signInWithGoogle()">
+          <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+          Continue with Google
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+<!-- ── END AUTH SCREEN ──────────────────────────────────────────── -->
+
+<div class="app" id="main-app" style="display:none">
 
   <header>
     <div class="brand">
@@ -263,8 +389,12 @@
     </div>
     <div class="header-actions">
       <span id="sync-status" style="font-size:11px;font-weight:500;letter-spacing:.04em;color:var(--ink-soft);transition:color .3s"></span>
+      <div class="user-pill" id="user-pill" style="display:none">
+        <div class="user-avatar" id="user-avatar">?</div>
+        <span id="user-display-name">Loading…</span>
+        <button class="btn-signout" onclick="signOut()" title="Sign out">✕</button>
+      </div>
       <a href="weekly-feast-manager.html" class="btn btn-ghost" style="text-decoration:none">⚙ Manage Meals</a>
-      <button class="btn btn-ghost" onclick="openSettingsModal()" title="Connection settings">🔌 Settings</button>
       <button class="btn btn-outline" id="btn-add-meal" style="display:none" onclick="switchTab('add')">+ Add Meal</button>
       <!-- Split export button -->
       <div id="btn-export" style="display:none;position:relative">
@@ -469,87 +599,6 @@
 
 </div>
 
-
-<!-- Setup Modal -->
-<div class="modal-backdrop" id="modal-setup" style="z-index:200">
-  <div class="modal" style="max-width:480px">
-    <div class="modal-header">
-      <div>
-        <div class="modal-title">Welcome to Weekly Feast 🍽</div>
-        <div class="modal-subtitle" id="setup-subtitle">Connect your Supabase project to get started.</div>
-      </div>
-    </div>
-    <div class="modal-body">
-      <p style="font-size:13px;color:var(--ink-soft);margin-bottom:18px;line-height:1.6">
-        Weekly Feast uses <strong style="color:var(--ink)">Supabase</strong> to sync your meal plans across devices.
-        Enter your own project credentials below — you'll find them in your Supabase dashboard under
-        <strong style="color:var(--ink)">Project Settings → API</strong>.
-      </p>
-      <div class="form-group">
-        <label class="form-label">Supabase Project URL</label>
-        <input class="form-input" id="setup-sb-url" type="url"
-          placeholder="https://xxxxxxxxxxx.supabase.co"
-          oninput="setupClearError()">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Supabase Anon Key</label>
-        <input class="form-input" id="setup-sb-key" type="text"
-          placeholder="eyJhbGciOiJIUz…"
-          style="font-size:11px;font-family:monospace"
-          oninput="setupClearError()">
-      </div>
-      <div id="setup-error" style="font-size:12px;color:var(--red);min-height:18px;margin-top:-6px;margin-bottom:8px"></div>
-      <details style="margin-top:4px">
-        <summary style="font-size:12px;color:var(--ink-soft);cursor:pointer;user-select:none">Where do I find these?</summary>
-        <div style="font-size:12px;color:var(--ink-soft);margin-top:8px;line-height:1.7;padding:10px 12px;background:var(--cream);border-radius:8px">
-          1. Go to <strong style="color:var(--ink)">supabase.com</strong> and open your project<br>
-          2. Click <strong style="color:var(--ink)">Project Settings</strong> (gear icon) → <strong style="color:var(--ink)">API</strong><br>
-          3. Copy the <strong style="color:var(--ink)">Project URL</strong> and the <strong style="color:var(--ink)">anon / public</strong> key<br>
-          4. You'll also need to add your Anthropic API key to your Supabase <code style="font-size:11px;background:var(--rule);padding:1px 4px;border-radius:3px">settings</code> table
-          under key <code style="font-size:11px;background:var(--rule);padding:1px 4px;border-radius:3px">anthropic_api_key</code> for recipe import to work.
-        </div>
-      </details>
-    </div>
-    <div class="modal-footer" style="justify-content:space-between;align-items:center">
-      <button class="btn btn-ghost" style="font-size:11px" onclick="openSettingsModal()">⚙ Change later in Settings</button>
-      <button class="btn btn-primary" id="setup-save-btn" onclick="saveSetupConfig()">Save &amp; Connect</button>
-    </div>
-  </div>
-</div>
-
-<!-- Settings Modal (accessible from header) -->
-<div class="modal-backdrop" id="modal-settings" onclick="closeModal('modal-settings',event)" style="z-index:200">
-  <div class="modal" style="max-width:480px">
-    <div class="modal-header">
-      <div>
-        <div class="modal-title">Connection Settings</div>
-        <div class="modal-subtitle">Update your Supabase credentials.</div>
-      </div>
-      <button class="modal-close" onclick="closeModal('modal-settings')">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-group">
-        <label class="form-label">Supabase Project URL</label>
-        <input class="form-input" id="settings-sb-url" type="url" placeholder="https://xxxxxxxxxxx.supabase.co">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Supabase Anon Key</label>
-        <input class="form-input" id="settings-sb-key" type="text"
-          placeholder="eyJhbGciOiJIUz…"
-          style="font-size:11px;font-family:monospace">
-      </div>
-      <div id="settings-error" style="font-size:12px;color:var(--red);min-height:18px;margin-top:-6px"></div>
-      <p style="font-size:12px;color:var(--ink-soft);margin-top:12px">
-        Credentials are stored in your browser's localStorage — never sent to anyone except your own Supabase project.
-      </p>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('modal-settings')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveSettingsConfig()">Save &amp; Reconnect</button>
-    </div>
-  </div>
-</div>
-
 <!-- Confirm Week Modal -->
 <div class="modal-backdrop" id="modal-confirm" onclick="closeModal('modal-confirm',event)">
   <div class="modal" style="max-width:500px">
@@ -584,6 +633,131 @@
 </div>
 
 <script>
+
+// ═══════════════════════════════════════════════════════════════════
+// AUTH — Supabase Auth with email/password + Google OAuth
+// ═══════════════════════════════════════════════════════════════════
+
+const SB_URL = "https://ltcukmqocxwfbvlsovnj.supabase.co";
+const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx0Y3VrbXFvY3h3ZmJ2bHNvdm5qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4NDMxMDAsImV4cCI6MjA5NDQxOTEwMH0.vViIrmuOEf8Hxw_xnCj3UnM0EqtFe-Uc-leeA9ULM_k";
+
+const sbClient = supabase.createClient(SB_URL, SB_KEY);
+
+let currentUser = null; // set once auth state resolves
+
+// ── Tab switcher ───────────────────────────────────────────────────
+function authSwitchTab(tab) {
+  document.getElementById("auth-signin-form").style.display = tab === "signin" ? "" : "none";
+  document.getElementById("auth-signup-form").style.display = tab === "signup" ? "" : "none";
+  document.getElementById("tab-signin").classList.toggle("active", tab === "signin");
+  document.getElementById("tab-signup").classList.toggle("active", tab === "signup");
+  document.getElementById("signin-error").textContent = "";
+  document.getElementById("signup-error").textContent = "";
+  document.getElementById("signup-success").textContent = "";
+}
+
+// ── Email sign-in ──────────────────────────────────────────────────
+async function signIn() {
+  const email    = document.getElementById("signin-email").value.trim();
+  const password = document.getElementById("signin-password").value;
+  const errEl    = document.getElementById("signin-error");
+  const btn      = document.getElementById("signin-btn");
+
+  if (!email || !password) { errEl.textContent = "Please enter your email and password."; return; }
+
+  btn.disabled = true; btn.textContent = "Signing in…";
+  errEl.textContent = "";
+
+  const { error } = await sbClient.auth.signInWithPassword({ email, password });
+
+  if (error) {
+    errEl.textContent = error.message;
+    btn.disabled = false; btn.textContent = "Sign In";
+  }
+  // On success, onAuthStateChange fires and handles the rest
+}
+
+// ── Email sign-up ──────────────────────────────────────────────────
+async function signUp() {
+  const name     = document.getElementById("signup-name").value.trim();
+  const email    = document.getElementById("signup-email").value.trim();
+  const password = document.getElementById("signup-password").value;
+  const errEl    = document.getElementById("signup-error");
+  const sucEl    = document.getElementById("signup-success");
+  const btn      = document.getElementById("signup-btn");
+
+  if (!name)     { errEl.textContent = "Please enter your name."; return; }
+  if (!email)    { errEl.textContent = "Please enter your email."; return; }
+  if (password.length < 6) { errEl.textContent = "Password must be at least 6 characters."; return; }
+
+  btn.disabled = true; btn.textContent = "Creating account…";
+  errEl.textContent = ""; sucEl.textContent = "";
+
+  const { error } = await sbClient.auth.signUp({
+    email, password,
+    options: { data: { display_name: name } }
+  });
+
+  if (error) {
+    errEl.textContent = error.message;
+    btn.disabled = false; btn.textContent = "Create Account";
+  } else {
+    sucEl.textContent = "Account created! Check your email to confirm, then sign in.";
+    btn.disabled = false; btn.textContent = "Create Account";
+  }
+}
+
+// ── Google OAuth ───────────────────────────────────────────────────
+async function signInWithGoogle() {
+  await sbClient.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: "https://devinwc.github.io/weekly-feast/index.html"
+    }
+  });
+}
+
+// ── Sign out ───────────────────────────────────────────────────────
+async function signOut() {
+  await sbClient.auth.signOut();
+  // onAuthStateChange will handle hiding the app
+}
+
+// ── Show / hide app based on auth state ───────────────────────────
+function showApp(user) {
+  currentUser = user;
+
+  // Update user pill
+  const name    = user.user_metadata?.display_name || user.email.split("@")[0];
+  const initial = name.charAt(0).toUpperCase();
+  document.getElementById("user-display-name").textContent = name;
+  document.getElementById("user-avatar").textContent = initial;
+  document.getElementById("user-pill").style.display = "inline-flex";
+
+  // Show app, hide auth screen
+  document.getElementById("auth-screen").classList.add("hidden");
+  document.getElementById("main-app").style.display = "";
+
+  // Boot the app — guard against re-running on token refresh
+  if (!window._appInited) { window._appInited = true; initApp(); }
+}
+
+function showAuthScreen() {
+  currentUser = null;
+  document.getElementById("auth-screen").classList.remove("hidden");
+  document.getElementById("main-app").style.display = "none";
+  document.getElementById("user-pill").style.display = "none";
+}
+
+// ── Listen for auth state changes ──────────────────────────────────
+sbClient.auth.onAuthStateChange((event, session) => {
+  if (session?.user) {
+    showApp(session.user);
+  } else {
+    showAuthScreen();
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════════
 // DATA
 // ═══════════════════════════════════════════════════════════════════
@@ -650,21 +824,10 @@ const TIME_BUDGETS = {
 // Supabase is the source of truth that keeps devices in sync.
 // ═══════════════════════════════════════════════════════════════════
 
-// ── CONFIG: loaded from localStorage, set via first-run Setup modal ──
-const WF_CONFIG_KEY = "wf_config";
-
-function loadConfig() {
-  try { return JSON.parse(localStorage.getItem(WF_CONFIG_KEY)) || {}; } catch { return {}; }
-}
-function saveConfig(cfg) {
-  localStorage.setItem(WF_CONFIG_KEY, JSON.stringify(cfg));
-}
-
-let _cfg = loadConfig();
-let SB_URL = _cfg.sbUrl || "";
-let SB_KEY = _cfg.sbKey || "";
-
+// SB_URL and SB_KEY defined in auth block above.
+// SB_HEADERS is a function so it always carries the current session token.
 function getSBHeaders() {
+  const session = sbClient.auth.getSession ? null : null; // resolved synchronously below
   return {
     "Content-Type":  "application/json",
     "apikey":        SB_KEY,
@@ -672,16 +835,15 @@ function getSBHeaders() {
     "Prefer":        "resolution=merge-duplicates",
   };
 }
-// Keep SB_HEADERS as a live getter alias
+// Alias for existing code that references SB_HEADERS directly
 const SB_HEADERS = new Proxy({}, { get: (_, k) => getSBHeaders()[k] });
 
 /** Generic Supabase REST fetch — returns parsed JSON or null on error. */
 async function sbFetch(method, table, body = null, query = "") {
-  if (!SB_URL || !SB_KEY) return null;
   try {
     const res = await fetch(`${SB_URL}/rest/v1/${table}${query}`, {
       method,
-      headers: getSBHeaders(),
+      headers: SB_HEADERS,
       body: body ? JSON.stringify(body) : undefined,
     });
     if (!res.ok) { console.warn("Supabase error", res.status, await res.text()); return null; }
@@ -928,84 +1090,7 @@ function renderConfirmedPlanView(week) {
 
 // ── APP INIT ───────────────────────────────────────────────────────
 
-
-// ═══════════════════════════════════════════════════════════════════
-// SETUP / SETTINGS — first-run credential configuration
-// ═══════════════════════════════════════════════════════════════════
-
-function showSetupModal() {
-  document.getElementById("modal-setup").classList.add("open");
-}
-
-function openSettingsModal() {
-  // Pre-fill with current values
-  const cfg = loadConfig();
-  document.getElementById("settings-sb-url").value = cfg.sbUrl || "";
-  document.getElementById("settings-sb-key").value = cfg.sbKey || "";
-  document.getElementById("settings-error").textContent = "";
-  // Close setup modal if open
-  document.getElementById("modal-setup").classList.remove("open");
-  document.getElementById("modal-settings").classList.add("open");
-}
-
-function setupClearError() {
-  document.getElementById("setup-error").textContent = "";
-}
-
-function _validateAndSave(urlId, keyId, errId, onSuccess) {
-  const url = document.getElementById(urlId).value.trim().replace(/\/$/, "");
-  const key = document.getElementById(keyId).value.trim();
-  const errEl = document.getElementById(errId);
-
-  if (!url || !url.startsWith("https://")) {
-    errEl.textContent = "Please enter a valid Supabase Project URL (starts with https://).";
-    return;
-  }
-  if (!key || key.length < 20) {
-    errEl.textContent = "Please enter your Supabase anon key.";
-    return;
-  }
-
-  // Save to localStorage and update runtime vars
-  const cfg = { sbUrl: url, sbKey: key };
-  saveConfig(cfg);
-  SB_URL = url;
-  SB_KEY = key;
-
-  onSuccess();
-}
-
-async function saveSetupConfig() {
-  _validateAndSave("setup-sb-url", "setup-sb-key", "setup-error", async () => {
-    document.getElementById("modal-setup").classList.remove("open");
-    document.getElementById("setup-subtitle").textContent = "Connect your Supabase project to get started.";
-    // Kick off the full app init now that we have credentials
-    await initApp();
-  });
-}
-
-async function saveSettingsConfig() {
-  _validateAndSave("settings-sb-url", "settings-sb-key", "settings-error", async () => {
-    closeModal("modal-settings");
-    // Reload data with new credentials
-    setSyncStatus("syncing");
-    await Promise.all([loadMealsFromDB(), loadThumbedDownFromDB(), loadConfirmedWeeksFromDB()]);
-    setSyncStatus("synced");
-    renderHistory();
-    showLatestConfirmedOnHome();
-  });
-}
-
 async function initApp() {
-  // Show setup modal if no Supabase credentials are configured
-  if (!SB_URL || !SB_KEY) {
-    showSetupModal();
-    renderWeekNav();
-    renderScheduleRow();
-    renderHistory();
-    return;
-  }
-
   setSyncStatus("syncing");
 
   const results = await Promise.all([
@@ -2620,7 +2705,7 @@ function exportWeekAsImage(includeGrocery = true, dinnersOnly = false) {
   link.click();
 }
 
-initApp();
+// App startup is driven by onAuthStateChange above — do not call initApp() directly.
 </script>
 </body>
 </html>
