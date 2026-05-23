@@ -809,12 +809,8 @@ function showApp(user) {
   document.getElementById("auth-screen").classList.add("hidden");
   document.getElementById("main-app").style.display = "";
 
-  // Seed the token immediately so getSBHeaders() works before initApp's
-  // getSession() call completes on very fast first renders.
-  sbClient.auth.getSession().then(({ data: { session } }) => {
-    if (session) _activeToken = session.access_token;
-  });
-  // Boot the app — guard against re-running on token refresh
+  // Boot the app — guard against re-running on token refresh.
+  // initApp() will await getSession() and set _activeToken before any DB calls.
   if (!window._appInited) { window._appInited = true; initApp(); }
 }
 
@@ -827,6 +823,8 @@ function showAuthScreen() {
 
 // ── Listen for auth state changes ──────────────────────────────────
 sbClient.auth.onAuthStateChange((event, session) => {
+  // Always update the token first so getSBHeaders() is current
+  _activeToken = session?.access_token || SB_KEY;
   if (session?.user) {
     showApp(session.user);
   } else {
@@ -900,26 +898,14 @@ const TIME_BUDGETS = {
 // Supabase is the source of truth that keeps devices in sync.
 // ═══════════════════════════════════════════════════════════════════
 
-// SB_URL and SB_KEY defined in auth block above.
-// SB_HEADERS is a function so it always carries the current session token.
-// Returns headers with the current user's JWT so RLS policies apply correctly.
-// Reads the session synchronously from sbClient so it's always current —
-// no race condition between onAuthStateChange and the first DB call.
+// _activeToken is set by onAuthStateChange (below) and seeded in initApp.
+// getSBHeaders() reads it synchronously so every sbFetch carries the right JWT.
+let _activeToken = SB_KEY;
 function getSBHeaders() {
-  // sbClient.auth.getSession() is async, but the session object is also
-  // available synchronously via the internal storage key Supabase uses.
-  // We pull it directly so this function stays synchronous.
-  const raw = localStorage.getItem(
-    "sb-" + SB_URL.replace("https://","").split(".")[0] + "-auth-token"
-  );
-  let token = SB_KEY;
-  if (raw) {
-    try { token = JSON.parse(raw)?.access_token || SB_KEY; } catch {}
-  }
   return {
     "Content-Type":  "application/json",
     "apikey":        SB_KEY,
-    "Authorization": "Bearer " + token,
+    "Authorization": "Bearer " + _activeToken,
     "Prefer":        "resolution=merge-duplicates",
   };
 }
@@ -1183,10 +1169,10 @@ function renderConfirmedPlanView(week) {
 // ── APP INIT ───────────────────────────────────────────────────────
 
 async function initApp() {
-  // Wait for the session to be fully resolved so the JWT is available
-  // before any DB calls go out. This prevents 401s on hard refresh.
+  // Await the session so _activeToken is set before any DB calls fire.
   const { data: { session } } = await sbClient.auth.getSession();
   if (!session) { showAuthScreen(); return; }
+  _activeToken = session.access_token;
 
   setSyncStatus("syncing");
 
