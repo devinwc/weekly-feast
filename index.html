@@ -809,6 +809,11 @@ function showApp(user) {
   document.getElementById("auth-screen").classList.add("hidden");
   document.getElementById("main-app").style.display = "";
 
+  // Seed the token immediately so getSBHeaders() works before initApp's
+  // getSession() call completes on very fast first renders.
+  sbClient.auth.getSession().then(({ data: { session } }) => {
+    if (session) _activeToken = session.access_token;
+  });
   // Boot the app — guard against re-running on token refresh
   if (!window._appInited) { window._appInited = true; initApp(); }
 }
@@ -1178,6 +1183,11 @@ function renderConfirmedPlanView(week) {
 // ── APP INIT ───────────────────────────────────────────────────────
 
 async function initApp() {
+  // Wait for the session to be fully resolved so the JWT is available
+  // before any DB calls go out. This prevents 401s on hard refresh.
+  const { data: { session } } = await sbClient.auth.getSession();
+  if (!session) { showAuthScreen(); return; }
+
   setSyncStatus("syncing");
 
   const results = await Promise.all([
