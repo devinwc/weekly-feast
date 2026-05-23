@@ -556,12 +556,25 @@ sbClient.auth.onAuthStateChange((event, session) => {
 // SUPABASE — same project as the main app, same tables
 // ═══════════════════════════════════════════════════════════════════
 
-const SB_HEADERS = new Proxy({}, { get: (_, k) => ({"Content-Type":"application/json","apikey":SB_KEY,"Authorization":"Bearer "+SB_KEY,"Prefer":"resolution=merge-duplicates"})[k] });
+let _cachedToken = null;
+sbClient.auth.onAuthStateChange((_, session) => {
+  _cachedToken = session?.access_token || null;
+});
+function getSBHeaders() {
+  const token = _cachedToken || SB_KEY;
+  return {
+    "Content-Type":  "application/json",
+    "apikey":        SB_KEY,
+    "Authorization": "Bearer " + token,
+    "Prefer":        "resolution=merge-duplicates",
+  };
+}
+const SB_HEADERS = new Proxy({}, { get: (_, k) => getSBHeaders()[k] });
 
 async function sbFetch(method, table, body = null, query = "") {
   try {
     const res = await fetch(`${SB_URL}/rest/v1/${table}${query}`, {
-      method, headers: SB_HEADERS,
+      method, headers: getSBHeaders(),
       body: body ? JSON.stringify(body) : undefined,
     });
     if (!res.ok) { console.warn("Supabase error", res.status, await res.text()); return null; }
@@ -639,7 +652,7 @@ async function loadAll() {
     MEALS = remoteMeals.map(r => r.data);
   } else if (remoteMeals && remoteMeals.length === 0) {
     MEALS = DEFAULT_MEALS;
-    await sbFetch("POST", "meals", MEALS.map(m => ({ id:m.id, data:m })));
+    await sbFetch("POST", "meals", MEALS.map(m => ({ id:m.id, data:m, user_id: currentUser?.id })));
   } else {
     try { MEALS = JSON.parse(localStorage.getItem("mgr_meals_cache")||"null") || DEFAULT_MEALS; } catch { MEALS = DEFAULT_MEALS; }
   }
@@ -674,7 +687,7 @@ async function withSyncStatus(fn) {
 }
 
 async function saveMealToDB(meal) {
-  return withSyncStatus(() => sbFetch("POST", "meals", [{ id: meal.id, data: meal }]).then(ok => {
+  return withSyncStatus(() => sbFetch("POST", "meals", [{ id: meal.id, data: meal, user_id: currentUser?.id }]).then(ok => {
     if (ok) localStorage.setItem("mgr_meals_cache", JSON.stringify(MEALS));
     return ok;
   }));
@@ -688,7 +701,7 @@ async function deleteMealFromDB(id) {
 }
 
 async function saveFeedbackToDB(entry) {
-  return withSyncStatus(() => sbFetch("POST", "feedback", [{ id: entry.id, meal_id: entry.mealId, data: entry }]).then(ok => {
+  return withSyncStatus(() => sbFetch("POST", "feedback", [{ id: entry.id, meal_id: entry.mealId, data: entry, user_id: currentUser?.id }]).then(ok => {
     if (ok) localStorage.setItem("mgr_fb_cache", JSON.stringify(FEEDBACK));
     return ok;
   }));
@@ -1318,7 +1331,7 @@ function importCSV(input) {
       if (!imported.length) { toast("No valid meals found in CSV", "error"); return; }
 
       MEALS = imported; ML = buildLookup();
-      await withSyncStatus(() => sbFetch("POST", "meals", MEALS.map(m => ({ id:m.id, data:m }))).then(ok => {
+      await withSyncStatus(() => sbFetch("POST", "meals", MEALS.map(m => ({ id:m.id, data:m, user_id: currentUser?.id }))).then(ok => {
         if (ok) localStorage.setItem("mgr_meals_cache", JSON.stringify(MEALS));
         return ok;
       }));

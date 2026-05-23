@@ -826,16 +826,21 @@ const TIME_BUDGETS = {
 
 // SB_URL and SB_KEY defined in auth block above.
 // SB_HEADERS is a function so it always carries the current session token.
+// Returns headers with the current user's JWT so RLS policies apply correctly.
+// Falls back to anon key if no session (shouldn't happen since app is auth-gated).
+let _cachedToken = null;
+sbClient.auth.onAuthStateChange((_, session) => {
+  _cachedToken = session?.access_token || null;
+});
 function getSBHeaders() {
-  const session = sbClient.auth.getSession ? null : null; // resolved synchronously below
+  const token = _cachedToken || SB_KEY;
   return {
     "Content-Type":  "application/json",
     "apikey":        SB_KEY,
-    "Authorization": "Bearer " + SB_KEY,
+    "Authorization": "Bearer " + token,
     "Prefer":        "resolution=merge-duplicates",
   };
 }
-// Alias for existing code that references SB_HEADERS directly
 const SB_HEADERS = new Proxy({}, { get: (_, k) => getSBHeaders()[k] });
 
 /** Generic Supabase REST fetch — returns parsed JSON or null on error. */
@@ -859,7 +864,8 @@ async function sbFetch(method, table, body = null, query = "") {
 // ── MEALS ──────────────────────────────────────────────────────────
 
 async function saveMealsToDB() {
-  const rows = MEALS.map(m => ({ id: m.id, data: m }));
+  const uid = currentUser?.id;
+  const rows = MEALS.map(m => ({ id: m.id, data: m, user_id: uid }));
   const ok = await sbFetch("POST", "meals", rows);
   localStorage.setItem("wf_meals_cache", JSON.stringify(MEALS));
   return ok;
@@ -882,7 +888,8 @@ async function loadMealsFromDB() {
 }
 
 async function saveOneMealToDB(meal) {
-  const ok = await sbFetch("POST", "meals", [{ id: meal.id, data: meal }]);
+  const uid = currentUser?.id;
+  const ok = await sbFetch("POST", "meals", [{ id: meal.id, data: meal, user_id: uid }]);
   localStorage.setItem("wf_meals_cache", JSON.stringify(MEALS));
   return ok;
 }
@@ -896,13 +903,15 @@ async function deleteMealFromDB(mealId) {
 // ── SETTINGS (thumbed-down list) ───────────────────────────────────
 
 async function saveThumbedDownToDB() {
-  const ok = await sbFetch("POST", "settings", [{ key: "thumbedDown", value: [...thumbedDown] }]);
+  const uid = currentUser?.id;
+  // Store as a single row per user keyed by user_id
+  const ok = await sbFetch("POST", "feedback", [{ user_id: uid, key: "thumbedDown", value: [...thumbedDown] }]);
   localStorage.setItem("wf_td_cache", JSON.stringify([...thumbedDown]));
   return ok;
 }
 
 async function loadThumbedDownFromDB() {
-  const remote = await sbFetch("GET", "settings", null, "?key=eq.thumbedDown&select=value");
+  const remote = await sbFetch("GET", "feedback", null, "?key=eq.thumbedDown&select=value");
   if (remote && remote.length > 0) {
     thumbedDown = new Set(remote[0].value || []);
     localStorage.setItem("wf_td_cache", JSON.stringify([...thumbedDown]));
@@ -916,7 +925,8 @@ async function loadThumbedDownFromDB() {
 // ── CONFIRMED WEEKS ────────────────────────────────────────────────
 
 async function saveConfirmedWeekToDB(week) {
-  const ok = await sbFetch("POST", "confirmed_weeks", [{ week_id: week.weekId, data: week }]);
+  const uid = currentUser?.id;
+  const ok = await sbFetch("POST", "confirmed_weeks", [{ week_id: week.weekId, data: week, user_id: uid }]);
   localStorage.setItem("wf_confirmed_cache", JSON.stringify(confirmedWeeks));
   return ok;
 }
