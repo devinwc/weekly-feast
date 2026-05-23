@@ -937,13 +937,19 @@ async function sbFetch(method, table, body = null, query = "") {
   }
 }
 
+// ── Cache key helper — scopes localStorage to current user ────────
+function ck(key) {
+  const uid = currentUser?.id || "anon";
+  return `${key}_${uid}`;
+}
+
 // ── MEALS ──────────────────────────────────────────────────────────
 
 async function saveMealsToDB() {
   const uid = currentUser?.id;
   const rows = MEALS.map(m => ({ id: m.id, data: m, user_id: uid }));
   const ok = await sbFetch("POST", "meals", rows);
-  localStorage.setItem("wf_meals_cache", JSON.stringify(MEALS));
+  localStorage.setItem(ck("wf_meals_cache"), JSON.stringify(MEALS));
   return ok;
 }
 
@@ -952,11 +958,11 @@ async function loadMealsFromDB() {
   if (remote && remote.length > 0) {
     MEALS = remote.map(r => r.data);
     ML = buildLookup();
-    localStorage.setItem("wf_meals_cache", JSON.stringify(MEALS));
+    localStorage.setItem(ck("wf_meals_cache"), JSON.stringify(MEALS));
     return true;
   }
   // Offline fallback — use local cache if it exists
-  const cached = localStorage.getItem("wf_meals_cache");
+  const cached = localStorage.getItem(ck("wf_meals_cache"));
   if (cached) {
     try { MEALS = JSON.parse(cached); ML = buildLookup(); } catch {}
   }
@@ -966,13 +972,13 @@ async function loadMealsFromDB() {
 async function saveOneMealToDB(meal) {
   const uid = currentUser?.id;
   const ok = await sbFetch("POST", "meals", [{ id: meal.id, data: meal, user_id: uid }]);
-  localStorage.setItem("wf_meals_cache", JSON.stringify(MEALS));
+  localStorage.setItem(ck("wf_meals_cache"), JSON.stringify(MEALS));
   return ok;
 }
 
 async function deleteMealFromDB(mealId) {
   const ok = await sbFetch("DELETE", "meals", null, `?id=eq.${mealId}`);
-  localStorage.setItem("wf_meals_cache", JSON.stringify(MEALS));
+  localStorage.setItem(ck("wf_meals_cache"), JSON.stringify(MEALS));
   return ok;
 }
 
@@ -982,7 +988,7 @@ async function saveThumbedDownToDB() {
   const uid = currentUser?.id;
   // Store as a single row per user keyed by user_id
   const ok = await sbFetch("POST", "feedback", [{ user_id: uid, key: "thumbedDown", value: [...thumbedDown] }]);
-  localStorage.setItem("wf_td_cache", JSON.stringify([...thumbedDown]));
+  localStorage.setItem(ck("wf_td_cache"), JSON.stringify([...thumbedDown]));
   return ok;
 }
 
@@ -990,10 +996,10 @@ async function loadThumbedDownFromDB() {
   const remote = await sbFetch("GET", "feedback", null, "?key=eq.thumbedDown&select=value");
   if (remote && remote.length > 0) {
     thumbedDown = new Set(remote[0].value || []);
-    localStorage.setItem("wf_td_cache", JSON.stringify([...thumbedDown]));
+    localStorage.setItem(ck("wf_td_cache"), JSON.stringify([...thumbedDown]));
     return true;
   }
-  const cached = localStorage.getItem("wf_td_cache");
+  const cached = localStorage.getItem(ck("wf_td_cache"));
   if (cached) { try { thumbedDown = new Set(JSON.parse(cached)); } catch {} }
   return false;
 }
@@ -1003,7 +1009,7 @@ async function loadThumbedDownFromDB() {
 async function saveConfirmedWeekToDB(week) {
   const uid = currentUser?.id;
   const ok = await sbFetch("POST", "confirmed_weeks", [{ week_id: week.weekId, data: week, user_id: uid }]);
-  localStorage.setItem("wf_confirmed_cache", JSON.stringify(confirmedWeeks));
+  localStorage.setItem(ck("wf_confirmed_cache"), JSON.stringify(confirmedWeeks));
   return ok;
 }
 
@@ -1011,17 +1017,17 @@ async function loadConfirmedWeeksFromDB() {
   const remote = await sbFetch("GET", "confirmed_weeks", null, "?select=data&order=confirmed_at.desc");
   if (remote && remote.length > 0) {
     confirmedWeeks = remote.map(r => r.data);
-    localStorage.setItem("wf_confirmed_cache", JSON.stringify(confirmedWeeks));
+    localStorage.setItem(ck("wf_confirmed_cache"), JSON.stringify(confirmedWeeks));
     return true;
   }
-  const cached = localStorage.getItem("wf_confirmed_cache");
+  const cached = localStorage.getItem(ck("wf_confirmed_cache"));
   if (cached) { try { confirmedWeeks = JSON.parse(cached); } catch {} }
   return false;
 }
 
 async function deleteConfirmedWeekFromDB(weekId) {
   const ok = await sbFetch("DELETE", "confirmed_weeks", null, `?week_id=eq.${encodeURIComponent(weekId)}`);
-  localStorage.setItem("wf_confirmed_cache", JSON.stringify(confirmedWeeks));
+  localStorage.setItem(ck("wf_confirmed_cache"), JSON.stringify(confirmedWeeks));
   return ok;
 }
 
@@ -1434,7 +1440,7 @@ function genPlan(existingDays=null) {
   const schedule     = getSchedule();
   const totalBudget  = getBudget();
   let   remaining    = totalBudget;
-  const history      = JSON.parse(localStorage.getItem("wf_plan_history")||"[]");
+  const history      = JSON.parse(localStorage.getItem(ck("wf_plan_history"))||"[]");
   const rotMap       = buildRotMap(history);
   const wCtx         = { c:new Set(), p:new Set() };
   const mon          = monday(weekOffset);  // uses current week offset
@@ -1519,7 +1525,7 @@ function genPlan(existingDays=null) {
   // Save to week plans store and history
   weekPlans[plan.weekStartDate] = plan;
   const updated=[...history,plan].slice(-12); // keep more history for multi-week
-  localStorage.setItem("wf_plan_history",JSON.stringify(updated));
+  localStorage.setItem(ck("wf_plan_history"),JSON.stringify(updated));
   return plan;
 }
 
@@ -2265,7 +2271,7 @@ function renderHistory() {
   const pruned = confirmedWeeks.filter(w => w.weekStartDate >= cutoffStr);
   if (pruned.length !== confirmedWeeks.length) {
     confirmedWeeks = pruned;
-    saveConfirmedWeekToDB && localStorage.setItem("wf_confirmed_cache", JSON.stringify(confirmedWeeks));
+    saveConfirmedWeekToDB && localStorage.setItem(ck("wf_confirmed_cache"), JSON.stringify(confirmedWeeks));
   }
 
   const count = confirmedWeeks.length;
