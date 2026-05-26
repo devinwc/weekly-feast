@@ -981,6 +981,11 @@ function renderMealTable() {
       <td>${m.thumbedDown ? '<span class="thumbed-badge">👎 Excluded</span>' : '<span style="color:var(--ink-soft);font-size:12px">Active</span>'}</td>
       <td><div class="actions-cell">
         <button class="btn btn-outline btn-sm" onclick="startEdit('${m.id}')">Edit</button>
+        <button class="btn btn-ghost btn-sm" onclick="shareFromManager('${m.id}', this)"
+          title="${m.source_meal_id ? 'Already in Recipe Library' : 'Share to Recipe Library'}"
+          ${m.source_meal_id ? 'disabled style="opacity:.45;cursor:default"' : ''}>
+          🌐${m.source_meal_id ? ' Shared' : ' Share'}
+        </button>
         <button class="btn btn-danger" onclick="toggleExclusion('${m.id}')">${m.thumbedDown?'Re-enable':'Exclude'}</button>
       </div></td>
     </tr>`;
@@ -1499,6 +1504,54 @@ function renderLibraryTable() {
       </thead>
       <tbody>${rows}</tbody>
     </table>`;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// SHARE TO RECIPE LIBRARY — from manager meal table
+// ═══════════════════════════════════════════════════════════════════
+
+async function shareFromManager(mealId, btnEl) {
+  const meal = ML[mealId];
+  if (!meal) return;
+
+  if (meal.source_meal_id) {
+    toast("Already in the Recipe Library", "info"); return;
+  }
+
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = "🌐 Sharing…"; }
+
+  const contributorName = currentUser?.user_metadata?.display_name
+    || currentUser?.email?.split("@")[0]
+    || "Anonymous";
+
+  const sharedId = `sl_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
+  const mealData = { ...meal, id: sharedId };
+
+  const row = {
+    id: sharedId,
+    data: mealData,
+    contributed_by: currentUser?.id,
+    contributor_name: contributorName,
+  };
+
+  const ok = await sbFetch("POST", "shared_meals", [row]);
+
+  if (ok) {
+    // Tag the personal meal with source_meal_id
+    meal.source_meal_id = sharedId;
+    await withSyncStatus(() => sbFetch("POST", "meals",
+      [{ id: meal.id, data: meal, user_id: currentUser?.id }]));
+
+    if (btnEl) { btnEl.textContent = "🌐 Shared"; btnEl.disabled = true; btnEl.style.opacity = ".45"; }
+    toast(`"${meal.name}" shared to Recipe Library ✓`, "success");
+
+    // Invalidate library cache so it reloads fresh
+    window._libraryLoaded = false;
+  } else {
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = "🌐 Share"; }
+    toast("Could not share — please try again", "error");
+  }
 }
 
 </script>
