@@ -648,6 +648,7 @@ const DEFAULT_MEALS = [
 ];
 
 let MEALS    = [];
+let _mealSortDir = "asc";
 let FEEDBACK = [];
 
 function buildLookup() { return Object.fromEntries(MEALS.map(m=>[m.id,m])); }
@@ -961,7 +962,7 @@ function renderMealTable() {
     if (search && !m.name.toLowerCase().includes(search) && !(m.tags||[]).join(" ").includes(search)) return false;
     return true;
   }).sort((a, b) => {
-    const cmp = a.name.localeCompare(b.name);
+    const cmp = (a.name || "").localeCompare(b.name || "");
     return _mealSortDir === "asc" ? cmp : -cmp;
   });
 
