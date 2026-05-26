@@ -381,7 +381,9 @@
       <table>
         <thead>
           <tr>
-            <th>Name</th>
+            <th onclick="toggleMealSort()" style="cursor:pointer;user-select:none">
+              Name <span id="sort-arrow">▲</span>
+            </th>
             <th>Type</th>
             <th>Kid Score</th>
             <th>Time</th>
@@ -941,6 +943,13 @@ function switchTab(t) {
 // MEAL TABLE
 // ═══════════════════════════════════════════════════════════════════
 
+function toggleMealSort() {
+  _mealSortDir = _mealSortDir === "asc" ? "desc" : "asc";
+  const arrow = document.getElementById("sort-arrow");
+  if (arrow) arrow.textContent = _mealSortDir === "asc" ? "▲" : "▼";
+  renderMealTable();
+}
+
 function renderMealTable() {
   const search = document.getElementById("meal-search").value.toLowerCase();
   const type   = document.getElementById("filter-type").value;
@@ -951,6 +960,9 @@ function renderMealTable() {
     if (minKid && (m.kidApprovalScore||0) < minKid) return false;
     if (search && !m.name.toLowerCase().includes(search) && !(m.tags||[]).join(" ").includes(search)) return false;
     return true;
+  }).sort((a, b) => {
+    const cmp = a.name.localeCompare(b.name);
+    return _mealSortDir === "asc" ? cmp : -cmp;
   });
 
   document.getElementById("meal-count").textContent = MEALS.length;
