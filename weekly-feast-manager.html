@@ -205,7 +205,7 @@
     <div class="auth-card-header">
       <div class="auth-logo">🍽</div>
       <h1>Weekly Feast</h1>
-      <p>Meal Database Manager</p>
+      <p>My Meals Manager</p>
     </div>
     <div class="auth-card-body">
       <p style="font-size:13px;color:var(--ink-soft);text-align:center;margin-bottom:20px">
@@ -256,7 +256,7 @@
   </header>
 
   <div class="tabs">
-    <button class="tab active" id="tab-meals"     onclick="switchTab('meals')">Meal Database</button>
+    <button class="tab active" id="tab-meals"     onclick="switchTab('meals')">My Meals</button>
     <button class="tab"        id="tab-feedback"  onclick="switchTab('feedback')">Feedback</button>
     <button class="tab"        id="tab-exclusions"onclick="switchTab('exclusions')">Exclusions</button>
     <button class="tab"        id="tab-library"   onclick="switchTab('library')">📚 Recipe Library</button>
@@ -1185,7 +1185,7 @@ function renderExclusions() {
   const excl = MEALS.filter(m=>m.thumbedDown);
   document.getElementById("excl-count").textContent = excl.length;
   const el = document.getElementById("excl-list");
-  if (!excl.length) { el.innerHTML='<div class="no-excl">No meals excluded. Thumbs-down a meal in the Meal Database tab to exclude it from future plans.</div>'; return; }
+  if (!excl.length) { el.innerHTML='<div class="no-excl">No meals excluded. Thumbs-down a meal in the My Meals tab to exclude it from future plans.</div>'; return; }
   el.innerHTML = excl.map(m => `
     <div class="excl-row">
       <div>
@@ -1438,6 +1438,15 @@ async function deleteSharedMeal(id) {
   const ok = await sbFetch("DELETE", "shared_meals", null, `?id=eq.${id}`);
   if (ok !== null) {
     SHARED_MEALS_MGR = SHARED_MEALS_MGR.filter(s => s.id !== id);
+
+    // Clear source_meal_id on any personal meals that referenced this shared entry
+    const affected = MEALS.filter(m => m.source_meal_id === id);
+    for (const m of affected) {
+      delete m.source_meal_id;
+      await sbFetch("POST", "meals", [{ id: m.id, data: m, user_id: currentUser?.id }]);
+    }
+    if (affected.length) { ML = buildLookup(); renderMealTable(); }
+
     renderLibraryTable();
     toast("Shared recipe deleted", "success");
   } else {
