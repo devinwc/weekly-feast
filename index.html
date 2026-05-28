@@ -1079,6 +1079,8 @@ function showLatestConfirmedOnHome() {
   if (!confirmedWeeks.length) return;
 
   const latest = confirmedWeeks[0]; // already sorted newest-first
+  _activeConfirmedWeek = latest;
+
   document.getElementById("btn-add-meal").style.display = "inline-flex";
   document.getElementById("btn-export").style.display = "";
   document.getElementById("empty-state").style.display = "none";
@@ -1089,8 +1091,13 @@ function showLatestConfirmedOnHome() {
   renderConfirmedPlanView(latest);
 
   // Build a synthetic plan so groceryList() can populate the Grocery tab
+  _renderGroceryFromConfirmed(latest);
+}
+
+/** Builds a synthetic plan from a confirmed week snapshot and renders the grocery list. */
+function _renderGroceryFromConfirmed(week) {
   const fakePlan = {
-    days: latest.days.map(d => ({
+    days: week.days.map(d => ({
       ...d,
       meals: Object.fromEntries(
         TYPES.map(t => [t, d.meals[t]?.id || null])
@@ -1105,7 +1112,13 @@ function renderConfirmedPlanView(week) {
   // Update week label
   const s = fmtDate(week.weekStartDate), e = fmtDate(week.weekEndDate);
   document.getElementById("week-label").textContent = `${s} – ${e}`;
-  document.getElementById("week-nav-label").textContent = `Confirmed · ${s}–${e}`;
+
+  // Show offset-aware label so navigation stays oriented
+  const label = weekOffset === 0 ? "This week"
+              : weekOffset === 1 ? "Next week"
+              : weekOffset > 1   ? `In ${weekOffset} weeks`
+              : `${Math.abs(weekOffset)} week${Math.abs(weekOffset) > 1 ? "s" : ""} ago`;
+  document.getElementById("week-nav-label").textContent = `${label} · ${s}–${e} ✓`;
 
   // Summary bar
   document.getElementById("summary-bar").innerHTML = `
@@ -1366,32 +1379,54 @@ function monday(offset = 0) {
 }
 
 function shiftWeek(dir) {
-  // Save current plan before navigating away
+  // Save current live plan before navigating away
   if (currentPlan) weekPlans[currentPlan.weekStartDate] = currentPlan;
 
-  weekOffset = Math.max(0, weekOffset + dir);
+  weekOffset += dir; // allow negative (past weeks that are confirmed)
 
   const mon = monday(weekOffset);
   const key = mon.toISOString().split("T")[0];
 
+  // 1. Live generated plan takes priority
   if (weekPlans[key]) {
-    currentPlan = weekPlans[key];
+    currentPlan          = weekPlans[key];
+    _activeConfirmedWeek = null;
     renderWeekNav();
     renderPlan(currentPlan);
     renderGrocery(currentPlan);
     const alreadyConfirmed = confirmedWeeks.some(w => w.weekId === currentPlan.id);
-    document.getElementById("confirm-bar").style.display = alreadyConfirmed ? "none" : "flex";
+    document.getElementById("confirm-bar").style.display  = alreadyConfirmed ? "none" : "flex";
     document.getElementById("plan-content").style.display = "block";
-    document.getElementById("empty-state").style.display = "none";
-    document.getElementById("btn-export").style.display = "";
-  } else {
-    currentPlan = null;
-    renderWeekNav();
-    document.getElementById("plan-content").style.display = "none";
-    document.getElementById("empty-state").style.display = "block";
-    document.getElementById("confirm-bar").style.display = "none";
-    document.getElementById("btn-export").style.display = "none";
+    document.getElementById("empty-state").style.display  = "none";
+    document.getElementById("btn-export").style.display   = "";
+    document.getElementById("btn-add-meal").style.display = "inline-flex";
+    return;
   }
+
+  // 2. Check if this week has a confirmed snapshot
+  const confirmed = confirmedWeeks.find(w => w.weekStartDate === key);
+  if (confirmed) {
+    currentPlan          = null;
+    _activeConfirmedWeek = confirmed;
+    renderWeekNav();
+    renderConfirmedPlanView(confirmed);
+    _renderGroceryFromConfirmed(confirmed);
+    document.getElementById("confirm-bar").style.display  = "none";
+    document.getElementById("plan-content").style.display = "block";
+    document.getElementById("empty-state").style.display  = "none";
+    document.getElementById("btn-export").style.display   = "";
+    document.getElementById("btn-add-meal").style.display = "inline-flex";
+    return;
+  }
+
+  // 3. Nothing for this week — show empty state
+  currentPlan          = null;
+  _activeConfirmedWeek = null;
+  renderWeekNav();
+  document.getElementById("plan-content").style.display = "none";
+  document.getElementById("empty-state").style.display  = "block";
+  document.getElementById("confirm-bar").style.display  = "none";
+  document.getElementById("btn-export").style.display   = "none";
 }
 
 function renderWeekNav() {
@@ -1400,12 +1435,21 @@ function renderWeekNav() {
   const fmt = d => d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
   const label = weekOffset === 0 ? "This week"
               : weekOffset === 1 ? "Next week"
-              : `In ${weekOffset} weeks`;
+              : weekOffset > 1   ? `In ${weekOffset} weeks`
+              : `${Math.abs(weekOffset)} week${Math.abs(weekOffset) > 1 ? "s" : ""} ago`;
   document.getElementById("week-nav-label").textContent =
     `${label} · ${fmt(mon)}–${fmt(sun)}`;
   document.getElementById("week-label").textContent =
     `${fmt(mon)} – ${fmt(sun)}`;
-  document.getElementById("btn-prev-week").disabled = weekOffset === 0;
+
+  // Allow going back as far as the oldest confirmed week
+  const oldestConfirmed = confirmedWeeks.length
+    ? confirmedWeeks[confirmedWeeks.length - 1].weekStartDate
+    : null;
+  const oldestOffset = oldestConfirmed
+    ? Math.round((monday(0) - new Date(oldestConfirmed + "T00:00:00")) / (7 * 86400000)) * -1
+    : 0;
+  document.getElementById("btn-prev-week").disabled = weekOffset <= oldestOffset;
 }
 
 function resolveSlot(day, type) {
@@ -1576,8 +1620,9 @@ function groceryList(plan) {
 // STATE
 // ═══════════════════════════════════════════════════════════════════
 
-let currentPlan   = null;
-let checked       = new Set();
+let currentPlan          = null;
+let _activeConfirmedWeek = null; // confirmed week currently displayed (may differ from currentPlan)
+let checked              = new Set();
 
 // ═══════════════════════════════════════════════════════════════════
 // DATE HELPERS
@@ -1803,6 +1848,11 @@ function switchTab(t) {
   const tabEl = document.getElementById("tab-"+t);
   if (tabEl) tabEl.classList.add("active");
   document.getElementById("panel-"+t).classList.add("active");
+  if (t === "grocery") {
+    // Always re-render grocery from whatever week is currently showing
+    if (currentPlan)               renderGrocery(currentPlan);
+    else if (_activeConfirmedWeek) _renderGroceryFromConfirmed(_activeConfirmedWeek);
+  }
   if (t === "history") renderHistory();
   if (t === "library") {
     if (!window._libraryLoaded) { window._libraryLoaded = true; loadSharedMeals(); }
