@@ -1220,6 +1220,12 @@ async function initApp() {
   renderScheduleRow();
   renderHistory();
   showLatestConfirmedOnHome(); // Change 2: display most recent confirmed week on load
+
+  // Sync grocery checks whenever the user returns to the page (e.g. wakes phone,
+  // switches back from another app). Only fires if the grocery tab is active.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") syncGroceryChecksIfVisible();
+  });
 }
 
 let thumbedDown = new Set(); // populated by initApp → loadThumbedDownFromDB
@@ -1926,6 +1932,30 @@ async function saveGroceryChecks(weekStart) {
   } catch(e) { /* fail silently — localStorage still holds state */ }
 }
 
+/** Re-fetches grocery checks from Supabase and re-renders if the grocery
+ *  tab is currently visible. Called on page visibility change. */
+async function syncGroceryChecksIfVisible() {
+  const groceryPanel = document.getElementById("panel-grocery");
+  if (!groceryPanel?.classList.contains("active")) return;
+
+  const weekStart = _activeConfirmedWeek?.weekStartDate
+    || currentPlan?.weekStartDate
+    || null;
+  if (!weekStart) return;
+
+  const remoteChecked = await loadGroceryChecks(weekStart);
+  if (!remoteChecked) return;
+
+  const same = remoteChecked.size === checked.size &&
+    [...remoteChecked].every(k => checked.has(k));
+  if (same) return;
+
+  checked = remoteChecked;
+  try { localStorage.setItem("grocery-checked:" + weekStart, JSON.stringify([...checked])); } catch(e) {}
+  if (_activeConfirmedWeek) _renderGroceryFromConfirmed(_activeConfirmedWeek);
+  else renderGroceryIfConfirmed();
+}
+
 function updateGroceryProgress(total) {
   const checkedCount = document.querySelectorAll(".grocery-item.checked").length;
   const t = total || document.querySelectorAll(".grocery-item").length;
@@ -1973,6 +2003,8 @@ function switchTab(t) {
   if (t === "grocery") {
     if (_activeConfirmedWeek) _renderGroceryFromConfirmed(_activeConfirmedWeek);
     else                      renderGroceryIfConfirmed();
+    // Also pull latest checks from Supabase in case another device made changes
+    syncGroceryChecksIfVisible();
   }
   if (t === "history") renderHistory();
   if (t === "library") {
