@@ -1906,14 +1906,15 @@ function _buildGroceryDOM(g, weekStart) {
 
 // ── Supabase grocery_checks helpers ───────────────────────────────
 
-/** Loads checked items for a week from Supabase. Returns a Set or null on error. */
+/** Loads checked items for a week from Supabase.
+ *  Returns a Set if a row exists, null if no row or on error. */
 async function loadGroceryChecks(weekStart) {
   try {
     const uid = (await sbClient.auth.getUser())?.data?.user?.id;
     if (!uid) return null;
     const data = await sbFetch("GET", "grocery_checks", null,
       `?user_id=eq.${uid}&week_start=eq.${weekStart}&select=checked`);
-    if (!data || !data[0]) return new Set();
+    if (!data || !data[0]) return null; // no row yet — don't touch local state
     return new Set(data[0].checked || []);
   } catch(e) { return null; }
 }
@@ -1932,8 +1933,9 @@ async function saveGroceryChecks(weekStart) {
   } catch(e) { /* fail silently — localStorage still holds state */ }
 }
 
-/** Re-fetches grocery checks from Supabase and re-renders if the grocery
- *  tab is currently visible. Called on page visibility change. */
+/** Re-fetches grocery checks from Supabase and re-renders only if the
+ *  remote state differs AND has actual data. Called on visibility change
+ *  and tab switch — never clobbers local checks with an empty remote result. */
 async function syncGroceryChecksIfVisible() {
   const groceryPanel = document.getElementById("panel-grocery");
   if (!groceryPanel?.classList.contains("active")) return;
@@ -1944,8 +1946,10 @@ async function syncGroceryChecksIfVisible() {
   if (!weekStart) return;
 
   const remoteChecked = await loadGroceryChecks(weekStart);
+  // null means no row in Supabase yet — keep whatever is checked locally
   if (!remoteChecked) return;
 
+  // Only re-render if remote actually differs from current in-memory state
   const same = remoteChecked.size === checked.size &&
     [...remoteChecked].every(k => checked.has(k));
   if (same) return;
