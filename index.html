@@ -1832,59 +1832,98 @@ function renderGroceryIfConfirmed() {
 
 function renderGrocery(plan) {
   const g = groceryList(plan);
-  const weekId = plan.id || plan.weekStartDate || "default";
+  const weekStart = plan.weekStartDate || plan.id || "default";
 
-  // Load persisted checks for this week
+  // Restore from localStorage cache immediately (feels instant),
+  // then sync from Supabase in the background and re-render if different.
   try {
-    const saved = localStorage.getItem("grocery-checked:" + weekId);
-    if (saved) checked = new Set(JSON.parse(saved));
-  } catch(e) { /* ignore */ }
+    const cached = localStorage.getItem("grocery-checked:" + weekStart);
+    if (cached) checked = new Set(JSON.parse(cached));
+    else checked = new Set();
+  } catch(e) { checked = new Set(); }
 
+  _buildGroceryDOM(g, weekStart);
+
+  // Background sync from Supabase
+  loadGroceryChecks(weekStart).then(remoteChecked => {
+    if (!remoteChecked) return;
+    // Only re-render if remote state differs from what's shown
+    const same = remoteChecked.size === checked.size && [...remoteChecked].every(k => checked.has(k));
+    if (!same) {
+      checked = remoteChecked;
+      try { localStorage.setItem("grocery-checked:" + weekStart, JSON.stringify([...checked])); } catch(e) {}
+      _buildGroceryDOM(g, weekStart);
+    }
+  });
+}
+
+/** Renders grocery category HTML from a groceryList result + current checked Set. */
+function _buildGroceryDOM(g, weekStart) {
   document.getElementById("grocery-item-count").textContent = g.total;
   document.getElementById("grocery-cost").textContent = `$${g.cost}`;
   document.getElementById("grocery-progress-wrap").style.display = "block";
 
   const EMOJI = {"Produce":"🥦","Meat & Seafood":"🥩","Dairy & Eggs":"🥛","Bread & Bakery":"🍞","Pantry":"🫙","Canned & Jarred":"🥫","Other":"📦"};
 
-  function buildCategories() {
-    return g.ORD.filter(c => g.grp[c]).map(c => {
-      const items = g.grp[c];
-      const unchecked = items.filter(item => !checked.has(norm(item.name)));
-      const checkedItems = items.filter(item => checked.has(norm(item.name)));
-      const remaining = unchecked.length;
+  const renderItem = (item, weekStart) => {
+    const key = norm(item.name);
+    const ck = checked.has(key);
+    const mealLabel = item.meals.length ? item.meals.join(", ") : "";
+    return `<div class="grocery-item ${ck ? "checked" : ""}" onclick="toggleItem('${key}','${weekStart}',this)">
+      <div class="item-check">${ck ? "✓" : ""}</div>
+      <span class="item-name">${item.name}</span>
+      ${mealLabel ? `<span class="item-meals" title="${mealLabel}">${mealLabel}</span>` : ""}
+      <span class="item-qty">${item.qty}</span>
+      <span class="item-cost">${item.cost > 0 ? "$" + item.cost.toFixed(2) : ""}</span>
+    </div>`;
+  };
 
-      const renderItem = item => {
-        const key = norm(item.name);
-        const ck = checked.has(key);
-        const mealLabel = item.meals.length ? item.meals.join(", ") : "";
-        return `<div class="grocery-item ${ck ? "checked" : ""}" onclick="toggleItem('${key}', '${weekId}', this)">
-          <div class="item-check">${ck ? "✓" : ""}</div>
-          <span class="item-name">${item.name}</span>
-          ${mealLabel ? `<span class="item-meals" title="${mealLabel}">${mealLabel}</span>` : ""}
-          <span class="item-qty">${item.qty}</span>
-          <span class="item-cost">${item.cost > 0 ? "$" + item.cost.toFixed(2) : ""}</span>
-        </div>`;
-      };
+  document.getElementById("grocery-categories").innerHTML = g.ORD.filter(c => g.grp[c]).map(c => {
+    const items = g.grp[c];
+    const unchecked   = items.filter(item => !checked.has(norm(item.name)));
+    const checkedItems = items.filter(item =>  checked.has(norm(item.name)));
+    const remaining = unchecked.length;
+    const remainingLabel = remaining === 0 && items.length > 0
+      ? `<span style="color:var(--green);font-size:11px">✓ Done</span>`
+      : `<span class="category-remaining">${remaining} left</span>`;
+    return `<div class="grocery-category">
+      <div class="category-title"><span>${EMOJI[c] || "•"} ${c}</span>${remainingLabel}</div>
+      <div class="grocery-items">
+        ${unchecked.map(i => renderItem(i, weekStart)).join("")}
+        ${checkedItems.map(i => renderItem(i, weekStart)).join("")}
+      </div>
+    </div>`;
+  }).join("");
 
-      const remainingLabel = remaining === 0 && items.length > 0
-        ? `<span style="color:var(--green);font-size:11px">✓ Done</span>`
-        : `<span class="category-remaining">${remaining} left</span>`;
-
-      return `<div class="grocery-category">
-        <div class="category-title">
-          <span>${EMOJI[c] || "•"} ${c}</span>
-          ${remainingLabel}
-        </div>
-        <div class="grocery-items">
-          ${unchecked.map(renderItem).join("")}
-          ${checkedItems.map(renderItem).join("")}
-        </div>
-      </div>`;
-    }).join("");
-  }
-
-  document.getElementById("grocery-categories").innerHTML = buildCategories();
   updateGroceryProgress(g.total);
+}
+
+// ── Supabase grocery_checks helpers ───────────────────────────────
+
+/** Loads checked items for a week from Supabase. Returns a Set or null on error. */
+async function loadGroceryChecks(weekStart) {
+  try {
+    const uid = (await sbClient.auth.getUser())?.data?.user?.id;
+    if (!uid) return null;
+    const data = await sbFetch("GET", "grocery_checks", null,
+      `?user_id=eq.${uid}&week_start=eq.${weekStart}&select=checked`);
+    if (!data || !data[0]) return new Set();
+    return new Set(data[0].checked || []);
+  } catch(e) { return null; }
+}
+
+/** Saves current checked Set for a week to Supabase (upsert). */
+async function saveGroceryChecks(weekStart) {
+  try {
+    const uid = (await sbClient.auth.getUser())?.data?.user?.id;
+    if (!uid) return;
+    await sbFetch("POST", "grocery_checks", [{
+      user_id:    uid,
+      week_start: weekStart,
+      checked:    [...checked],
+      updated_at: new Date().toISOString(),
+    }]);
+  } catch(e) { /* fail silently — localStorage still holds state */ }
 }
 
 function updateGroceryProgress(total) {
@@ -1942,7 +1981,7 @@ function switchTab(t) {
   }
 }
 
-function toggleItem(key, weekId, el) {
+function toggleItem(key, weekStart, el) {
   checked.has(key) ? checked.delete(key) : checked.add(key);
   el.classList.toggle("checked", checked.has(key));
   el.querySelector(".item-check").textContent = checked.has(key) ? "✓" : "";
@@ -1970,24 +2009,18 @@ function toggleItem(key, weekId, el) {
     }
   }
 
-  // Persist to localStorage keyed by week
-  try {
-    localStorage.setItem("grocery-checked:" + weekId, JSON.stringify([...checked]));
-  } catch(e) { /* ignore */ }
+  // Write to localStorage immediately (instant) then sync to Supabase
+  try { localStorage.setItem("grocery-checked:" + weekStart, JSON.stringify([...checked])); } catch(e) {}
+  saveGroceryChecks(weekStart);
 
   updateGroceryProgress();
 }
 
 function uncheckAll() {
-  // Find current weekId from active confirmed week or current plan
-  const weekId = _activeConfirmedWeek?.weekStartDate || currentPlan?.id || currentPlan?.weekStartDate || "default";
+  const weekStart = _activeConfirmedWeek?.weekStartDate || currentPlan?.weekStartDate || "default";
   checked.clear();
-  try { localStorage.removeItem("grocery-checked:" + weekId); } catch(e) {}
-  document.querySelectorAll(".grocery-item").forEach(el => {
-    el.classList.remove("checked");
-    el.querySelector(".item-check").textContent = "";
-    // Float all items back to natural order (re-render is cleanest)
-  });
+  try { localStorage.removeItem("grocery-checked:" + weekStart); } catch(e) {}
+  saveGroceryChecks(weekStart); // saves empty array to Supabase
   // Re-render to restore sort order
   if (_activeConfirmedWeek) _renderGroceryFromConfirmed(_activeConfirmedWeek);
   else if (currentPlan)     renderGroceryIfConfirmed();
