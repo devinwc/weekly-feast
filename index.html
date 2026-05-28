@@ -1389,7 +1389,7 @@ function shiftWeek(dir) {
     _activeConfirmedWeek = null;
     renderWeekNav();
     renderPlan(currentPlan);
-    renderGrocery(currentPlan);
+    renderGroceryIfConfirmed();
     const alreadyConfirmed = confirmedWeeks.some(w => w.weekId === currentPlan.id);
     document.getElementById("confirm-bar").style.display  = alreadyConfirmed ? "none" : "flex";
     document.getElementById("plan-content").style.display = "block";
@@ -1658,7 +1658,7 @@ function rebuildIfPlan() {
   currentPlan = genPlan();
   recalc();
   renderPlan(currentPlan);
-  renderGrocery(currentPlan);
+  renderGroceryIfConfirmed();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1790,6 +1790,24 @@ function renderPlan(plan) {
 // RENDER — GROCERY
 // ═══════════════════════════════════════════════════════════════════
 
+/** Only renders the grocery list if currentPlan belongs to a confirmed week.
+ *  Otherwise clears the panel and shows a prompt to confirm first. */
+function renderGroceryIfConfirmed() {
+  const isConfirmed = currentPlan && confirmedWeeks.some(w => w.weekId === currentPlan.id);
+  if (isConfirmed) {
+    renderGrocery(currentPlan);
+  } else {
+    document.getElementById("grocery-categories").innerHTML = `
+      <div style="padding:48px 24px;text-align:center;color:var(--ink-soft)">
+        <div style="font-size:32px;margin-bottom:12px">🛒</div>
+        <div style="font-size:15px;font-weight:500;color:var(--ink);margin-bottom:6px">No grocery list yet</div>
+        <div style="font-size:13px">Confirm this week's plan to generate your grocery list.</div>
+      </div>`;
+    document.getElementById("grocery-item-count").textContent = "0";
+    document.getElementById("grocery-cost").textContent = "$0";
+  }
+}
+
 function renderGrocery(plan) {
   const g=groceryList(plan);
   document.getElementById("grocery-item-count").textContent=g.total;
@@ -1833,7 +1851,7 @@ function handleGenerate() {
     renderWeekNav();
     const alreadyConfirmed = confirmedWeeks.some(w => w.weekId === currentPlan.id);
     document.getElementById("confirm-bar").style.display = alreadyConfirmed ? "none" : "flex";
-    renderPlan(currentPlan); renderGrocery(currentPlan); switchTab("plan");
+    renderPlan(currentPlan); renderGroceryIfConfirmed(); switchTab("plan");
     btn.innerHTML="↺ Regenerate"; btn.disabled=false;
   },380);
 }
@@ -1845,22 +1863,8 @@ function switchTab(t) {
   if (tabEl) tabEl.classList.add("active");
   document.getElementById("panel-"+t).classList.add("active");
   if (t === "grocery") {
-    if (_activeConfirmedWeek)    _renderGroceryFromConfirmed(_activeConfirmedWeek);
-    else if (currentPlan) {
-      // Only confirmed weeks get a grocery list
-      const isConfirmed = confirmedWeeks.some(w => w.weekId === currentPlan.id);
-      if (isConfirmed) renderGrocery(currentPlan);
-      else {
-        document.getElementById("grocery-categories").innerHTML = `
-          <div style="padding:48px 24px;text-align:center;color:var(--ink-soft)">
-            <div style="font-size:32px;margin-bottom:12px">🛒</div>
-            <div style="font-size:15px;font-weight:500;color:var(--ink);margin-bottom:6px">No grocery list yet</div>
-            <div style="font-size:13px">Confirm this week's plan to generate your grocery list.</div>
-          </div>`;
-        document.getElementById("grocery-item-count").textContent = "0";
-        document.getElementById("grocery-cost").textContent = "$0";
-      }
-    }
+    if (_activeConfirmedWeek) _renderGroceryFromConfirmed(_activeConfirmedWeek);
+    else                      renderGroceryIfConfirmed();
   }
   if (t === "history") renderHistory();
   if (t === "library") {
@@ -1879,12 +1883,12 @@ function uncheckAll() {
   document.querySelectorAll(".grocery-item").forEach(el=>{ el.classList.remove("checked"); el.querySelector(".item-check").textContent=""; });
 }
 
-function handleRegen(di,type) { regenSlot(di,type); renderPlan(currentPlan); renderGrocery(currentPlan); }
+function handleRegen(di,type) { regenSlot(di,type); renderPlan(currentPlan); renderGroceryIfConfirmed(); }
 
 async function toggleTD(id) {
   thumbedDown.has(id) ? thumbedDown.delete(id) : thumbedDown.add(id);
   withSyncStatus(() => saveThumbedDownToDB());
-  renderPlan(currentPlan); renderGrocery(currentPlan);
+  renderPlan(currentPlan); renderGroceryIfConfirmed();
 }
 async function clearTD() {
   thumbedDown.clear();
@@ -1895,11 +1899,11 @@ async function clearTD() {
 function setNA(di,type) {
   currentPlan.days[di].meals[type]=NA;
   if(currentPlan.days[di].overrides) delete currentPlan.days[di].overrides[type];
-  recalc(); renderPlan(currentPlan); renderGrocery(currentPlan); closeModal("modal-action");
+  recalc(); renderPlan(currentPlan); renderGroceryIfConfirmed(); closeModal("modal-action");
 }
 function clearNA(di,type) {
   currentPlan.days[di].meals[type]=null;
-  regenSlot(di,type); renderPlan(currentPlan); renderGrocery(currentPlan);
+  regenSlot(di,type); renderPlan(currentPlan); renderGroceryIfConfirmed();
 }
 function applyOverride(di,type,name) {
   name=name.trim(); if(!name) return;
@@ -1908,7 +1912,7 @@ function applyOverride(di,type,name) {
   currentPlan.days[di].overrides[type]={mealId:mid,name,isManual:true};
   currentPlan.days[di].meals[type]=null;
   ML[mid]={id:mid,name,mealType:type,kidApprovalScore:3,prepTime:0,cookTime:0,totalTime:0,totalCostEstimate:0,tags:[],recipeLink:null,thumbedDown:false,ingredients:[]};
-  recalc(); renderPlan(currentPlan); renderGrocery(currentPlan); closeModal("modal-action");
+  recalc(); renderPlan(currentPlan); renderGroceryIfConfirmed(); closeModal("modal-action");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1985,7 +1989,7 @@ function doSwap(di,type) {
   if(!window._swapSel) return;
   if(currentPlan.days[di].overrides) delete currentPlan.days[di].overrides[type];
   currentPlan.days[di].meals[type]=window._swapSel;
-  window._swapSel=null; recalc(); renderPlan(currentPlan); renderGrocery(currentPlan); closeModal("modal-action");
+  window._swapSel=null; recalc(); renderPlan(currentPlan); renderGroceryIfConfirmed(); closeModal("modal-action");
 }
 
 function showOverride(di,type) {
