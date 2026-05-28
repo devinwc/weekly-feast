@@ -1127,10 +1127,6 @@ function renderConfirmedPlanView(week) {
       <span class="stat-label">Est. total</span>
     </div>
     <div class="stat-pill">
-      <span class="stat-value">${week.days.length}</span>
-      <span class="stat-label">Days planned</span>
-    </div>
-    <div class="stat-pill">
       <span class="confirmed-badge">✓ Confirmed ${week.confirmedAt}</span>
     </div>`;
 
@@ -1849,9 +1845,22 @@ function switchTab(t) {
   if (tabEl) tabEl.classList.add("active");
   document.getElementById("panel-"+t).classList.add("active");
   if (t === "grocery") {
-    // Always re-render grocery from whatever week is currently showing
-    if (currentPlan)               renderGrocery(currentPlan);
-    else if (_activeConfirmedWeek) _renderGroceryFromConfirmed(_activeConfirmedWeek);
+    if (_activeConfirmedWeek)    _renderGroceryFromConfirmed(_activeConfirmedWeek);
+    else if (currentPlan) {
+      // Only confirmed weeks get a grocery list
+      const isConfirmed = confirmedWeeks.some(w => w.weekId === currentPlan.id);
+      if (isConfirmed) renderGrocery(currentPlan);
+      else {
+        document.getElementById("grocery-categories").innerHTML = `
+          <div style="padding:48px 24px;text-align:center;color:var(--ink-soft)">
+            <div style="font-size:32px;margin-bottom:12px">🛒</div>
+            <div style="font-size:15px;font-weight:500;color:var(--ink);margin-bottom:6px">No grocery list yet</div>
+            <div style="font-size:13px">Confirm this week's plan to generate your grocery list.</div>
+          </div>`;
+        document.getElementById("grocery-item-count").textContent = "0";
+        document.getElementById("grocery-cost").textContent = "$0";
+      }
+    }
   }
   if (t === "history") renderHistory();
   if (t === "library") {
