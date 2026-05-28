@@ -186,17 +186,25 @@
   .grocery-stat { font-size:13px; color:var(--ink-soft); }
   .grocery-stat strong { color:var(--ink); }
   .grocery-categories { display:flex; flex-direction:column; gap:20px; }
-  .category-title { font-size:11px; font-weight:500; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-soft); padding-bottom:8px; border-bottom:1px solid var(--rule); margin-bottom:10px; display:flex; justify-content:space-between; }
+  .category-title { font-size:11px; font-weight:500; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-soft); padding-bottom:8px; border-bottom:1px solid var(--rule); margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; }
+  .category-remaining { font-size:11px; color:var(--ink-soft); font-weight:400; }
   .grocery-items { display:flex; flex-direction:column; gap:1px; }
-  .grocery-item { display:flex; align-items:center; gap:10px; padding:7px 10px; border-radius:7px; transition:background var(--t); cursor:pointer; }
+  .grocery-item { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:7px; transition:background var(--t),opacity var(--t); cursor:pointer; }
   .grocery-item:hover { background:var(--paper); }
-  .grocery-item.checked { opacity:.45; }
-  .grocery-item.checked .item-name { text-decoration:line-through; }
-  .item-check { width:16px; height:16px; border:1.5px solid var(--rule); border-radius:4px; flex-shrink:0; display:flex; align-items:center; justify-content:center; transition:all var(--t); font-size:10px; }
+  .grocery-item.checked { opacity:.35; }
+  .grocery-item.checked .item-name { text-decoration:line-through; color:var(--ink-soft); }
+  .item-check { width:18px; height:18px; border:1.5px solid var(--rule); border-radius:5px; flex-shrink:0; display:flex; align-items:center; justify-content:center; transition:all var(--t); font-size:11px; }
   .grocery-item.checked .item-check { background:var(--green); border-color:var(--green); color:white; }
   .item-name { font-size:13px; flex:1; }
   .item-qty  { font-size:11px; color:var(--ink-soft); font-weight:500; white-space:nowrap; }
   .item-cost { font-size:11px; color:var(--ink-soft); width:42px; text-align:right; }
+  .item-meals { font-size:10px; color:var(--ink-soft); opacity:.7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:120px; }
+
+  /* Grocery progress bar */
+  .grocery-progress-wrap { margin-bottom:20px; }
+  .grocery-progress-label { display:flex; justify-content:space-between; font-size:12px; color:var(--ink-soft); margin-bottom:6px; }
+  .grocery-progress-track { height:6px; background:var(--rule); border-radius:99px; overflow:hidden; }
+  .grocery-progress-fill  { height:100%; background:var(--green); border-radius:99px; transition:width .3s ease; }
 
   /* Modals */
   .modal-backdrop { position:fixed; inset:0; background:rgba(28,25,23,.35); backdrop-filter:blur(2px); z-index:100; display:flex; align-items:center; justify-content:center; padding:20px; opacity:0; pointer-events:none; transition:opacity var(--t); }
@@ -549,6 +557,13 @@
         <span class="grocery-stat">Est. <strong id="grocery-cost">$0</strong></span>
         <button class="btn btn-ghost" onclick="uncheckAll()">Uncheck all</button>
       </div>
+    </div>
+    <div class="grocery-progress-wrap" id="grocery-progress-wrap" style="display:none">
+      <div class="grocery-progress-label">
+        <span id="grocery-progress-label">0 of 0 items checked off</span>
+        <span id="grocery-progress-pct">0%</span>
+      </div>
+      <div class="grocery-progress-track"><div class="grocery-progress-fill" id="grocery-progress-fill" style="width:0%"></div></div>
     </div>
     <div class="grocery-categories" id="grocery-categories"></div>
   </div>
@@ -1597,15 +1612,21 @@ function groceryList(plan) {
     const meal=ML[mid]; if(!meal||!meal.ingredients) continue;
     for(const ing of meal.ingredients) {
       const key=norm(ing.name);
-      if(!raw[key]) raw[key]={n:ing.name,qty:[],cost:0};
+      if(!raw[key]) raw[key]={n:ing.name,qty:[],cost:0,meals:new Set()};
       if(ing.quantity) raw[key].qty.push(ing.quantity);
       raw[key].cost+=ing.estimatedCost||0;
+      raw[key].meals.add(meal.name);
     }
   }
   const grp={};
   for(const [,d] of Object.entries(raw)) {
     const c=cat(d.n); if(!grp[c]) grp[c]=[];
-    grp[c].push({name:d.n,qty:[...new Set(d.qty)].join(", ")||"as needed",cost:Math.round(d.cost*100)/100});
+    grp[c].push({
+      name: d.n,
+      qty:  [...new Set(d.qty)].join(", ")||"as needed",
+      cost: Math.round(d.cost*100)/100,
+      meals:[...d.meals],
+    });
   }
   for(const c of Object.keys(grp)) grp[c].sort((a,b)=>a.name.localeCompare(b.name));
   const ORD=["Produce","Meat & Seafood","Dairy & Eggs","Bread & Bakery","Canned & Jarred","Pantry","Other"];
@@ -1805,27 +1826,75 @@ function renderGroceryIfConfirmed() {
       </div>`;
     document.getElementById("grocery-item-count").textContent = "0";
     document.getElementById("grocery-cost").textContent = "$0";
+    document.getElementById("grocery-progress-wrap").style.display = "none";
   }
 }
 
 function renderGrocery(plan) {
-  const g=groceryList(plan);
-  document.getElementById("grocery-item-count").textContent=g.total;
-  document.getElementById("grocery-cost").textContent=`$${g.cost}`;
-  const EMOJI={"Produce":"🥦","Meat & Seafood":"🥩","Dairy & Eggs":"🥛","Bread & Bakery":"🍞","Pantry":"🫙","Canned & Jarred":"🥫","Other":"📦"};
-  document.getElementById("grocery-categories").innerHTML=g.ORD.filter(c=>g.grp[c]).map(c=>`
-    <div class="grocery-category">
-      <div class="category-title"><span>${EMOJI[c]||"•"} ${c}</span><span>${g.grp[c].length} item${g.grp[c].length!==1?"s":""}</span></div>
-      <div class="grocery-items">${g.grp[c].map(item=>{
-        const key=norm(item.name); const ck=checked.has(key);
-        return `<div class="grocery-item ${ck?"checked":""}" onclick="toggleItem('${key}',this)">
-          <div class="item-check">${ck?"✓":""}</div>
+  const g = groceryList(plan);
+  const weekId = plan.id || plan.weekStartDate || "default";
+
+  // Load persisted checks for this week
+  try {
+    const saved = localStorage.getItem("grocery-checked:" + weekId);
+    if (saved) checked = new Set(JSON.parse(saved));
+  } catch(e) { /* ignore */ }
+
+  document.getElementById("grocery-item-count").textContent = g.total;
+  document.getElementById("grocery-cost").textContent = `$${g.cost}`;
+  document.getElementById("grocery-progress-wrap").style.display = "block";
+
+  const EMOJI = {"Produce":"🥦","Meat & Seafood":"🥩","Dairy & Eggs":"🥛","Bread & Bakery":"🍞","Pantry":"🫙","Canned & Jarred":"🥫","Other":"📦"};
+
+  function buildCategories() {
+    return g.ORD.filter(c => g.grp[c]).map(c => {
+      const items = g.grp[c];
+      const unchecked = items.filter(item => !checked.has(norm(item.name)));
+      const checkedItems = items.filter(item => checked.has(norm(item.name)));
+      const remaining = unchecked.length;
+
+      const renderItem = item => {
+        const key = norm(item.name);
+        const ck = checked.has(key);
+        const mealLabel = item.meals.length ? item.meals.join(", ") : "";
+        return `<div class="grocery-item ${ck ? "checked" : ""}" onclick="toggleItem('${key}', '${weekId}', this)">
+          <div class="item-check">${ck ? "✓" : ""}</div>
           <span class="item-name">${item.name}</span>
+          ${mealLabel ? `<span class="item-meals" title="${mealLabel}">${mealLabel}</span>` : ""}
           <span class="item-qty">${item.qty}</span>
-          <span class="item-cost">$${item.cost.toFixed(2)}</span>
+          <span class="item-cost">${item.cost > 0 ? "$" + item.cost.toFixed(2) : ""}</span>
         </div>`;
-      }).join("")}</div>
-    </div>`).join("");
+      };
+
+      const remainingLabel = remaining === 0 && items.length > 0
+        ? `<span style="color:var(--green);font-size:11px">✓ Done</span>`
+        : `<span class="category-remaining">${remaining} left</span>`;
+
+      return `<div class="grocery-category">
+        <div class="category-title">
+          <span>${EMOJI[c] || "•"} ${c}</span>
+          ${remainingLabel}
+        </div>
+        <div class="grocery-items">
+          ${unchecked.map(renderItem).join("")}
+          ${checkedItems.map(renderItem).join("")}
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  document.getElementById("grocery-categories").innerHTML = buildCategories();
+  updateGroceryProgress(g.total);
+}
+
+function updateGroceryProgress(total) {
+  const checkedCount = document.querySelectorAll(".grocery-item.checked").length;
+  const t = total || document.querySelectorAll(".grocery-item").length;
+  const pct = t > 0 ? Math.round(checkedCount / t * 100) : 0;
+  document.getElementById("grocery-progress-label").textContent =
+    `${checkedCount} of ${t} items checked off`;
+  document.getElementById("grocery-progress-pct").textContent = `${pct}%`;
+  document.getElementById("grocery-progress-fill").style.width = `${pct}%`;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1873,14 +1942,55 @@ function switchTab(t) {
   }
 }
 
-function toggleItem(key,el) {
-  checked.has(key)?checked.delete(key):checked.add(key);
-  el.classList.toggle("checked",checked.has(key));
-  el.querySelector(".item-check").textContent=checked.has(key)?"✓":"";
+function toggleItem(key, weekId, el) {
+  checked.has(key) ? checked.delete(key) : checked.add(key);
+  el.classList.toggle("checked", checked.has(key));
+  el.querySelector(".item-check").textContent = checked.has(key) ? "✓" : "";
+
+  // Sink checked item to bottom of its list, float unchecked to top
+  const list = el.closest(".grocery-items");
+  if (list) {
+    if (checked.has(key)) list.appendChild(el);
+    else list.prepend(el);
+  }
+
+  // Update "X left" label in category title
+  const category = el.closest(".grocery-category");
+  if (category) {
+    const allItems = category.querySelectorAll(".grocery-item");
+    const remaining = [...allItems].filter(i => !i.classList.contains("checked")).length;
+    const labelEl = category.querySelector(".category-remaining");
+    if (labelEl) {
+      if (remaining === 0) {
+        labelEl.outerHTML = `<span style="color:var(--green);font-size:11px" class="category-remaining">✓ Done</span>`;
+      } else {
+        labelEl.textContent = `${remaining} left`;
+        labelEl.style.color = "";
+      }
+    }
+  }
+
+  // Persist to localStorage keyed by week
+  try {
+    localStorage.setItem("grocery-checked:" + weekId, JSON.stringify([...checked]));
+  } catch(e) { /* ignore */ }
+
+  updateGroceryProgress();
 }
+
 function uncheckAll() {
+  // Find current weekId from active confirmed week or current plan
+  const weekId = _activeConfirmedWeek?.weekStartDate || currentPlan?.id || currentPlan?.weekStartDate || "default";
   checked.clear();
-  document.querySelectorAll(".grocery-item").forEach(el=>{ el.classList.remove("checked"); el.querySelector(".item-check").textContent=""; });
+  try { localStorage.removeItem("grocery-checked:" + weekId); } catch(e) {}
+  document.querySelectorAll(".grocery-item").forEach(el => {
+    el.classList.remove("checked");
+    el.querySelector(".item-check").textContent = "";
+    // Float all items back to natural order (re-render is cleanest)
+  });
+  // Re-render to restore sort order
+  if (_activeConfirmedWeek) _renderGroceryFromConfirmed(_activeConfirmedWeek);
+  else if (currentPlan)     renderGroceryIfConfirmed();
 }
 
 function handleRegen(di,type) { regenSlot(di,type); renderPlan(currentPlan); renderGroceryIfConfirmed(); }
