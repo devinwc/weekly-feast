@@ -1911,26 +1911,32 @@ function _buildGroceryDOM(g, weekStart) {
 async function loadGroceryChecks(weekStart) {
   try {
     const uid = (await sbClient.auth.getUser())?.data?.user?.id;
-    if (!uid) return null;
+    if (!uid) { console.log("[grocery-sync] no uid"); return null; }
+    console.log("[grocery-sync] loading for", weekStart, "uid", uid);
     const data = await sbFetch("GET", "grocery_checks", null,
       `?user_id=eq.${uid}&week_start=eq.${weekStart}&select=checked`);
-    if (!data || !data[0]) return null; // no row yet — don't touch local state
-    return new Set(data[0].checked || []);
-  } catch(e) { return null; }
+    console.log("[grocery-sync] raw response:", data);
+    if (!data || !data[0]) { console.log("[grocery-sync] no row found"); return null; }
+    const result = new Set(data[0].checked || []);
+    console.log("[grocery-sync] loaded", result.size, "checks:", [...result]);
+    return result;
+  } catch(e) { console.warn("[grocery-sync] load error:", e); return null; }
 }
 
 /** Saves current checked Set for a week to Supabase (upsert). */
 async function saveGroceryChecks(weekStart) {
   try {
     const uid = (await sbClient.auth.getUser())?.data?.user?.id;
-    if (!uid) return;
-    await sbFetch("POST", "grocery_checks", [{
+    if (!uid) { console.log("[grocery-sync] save skipped — no uid"); return; }
+    console.log("[grocery-sync] saving", checked.size, "checks for", weekStart, [...checked]);
+    const result = await sbFetch("POST", "grocery_checks", [{
       user_id:    uid,
       week_start: weekStart,
       checked:    [...checked],
       updated_at: new Date().toISOString(),
     }]);
-  } catch(e) { /* fail silently — localStorage still holds state */ }
+    console.log("[grocery-sync] save result:", result);
+  } catch(e) { console.warn("[grocery-sync] save error:", e); }
 }
 
 /** Re-fetches grocery checks from Supabase and re-renders only if the
@@ -1938,22 +1944,23 @@ async function saveGroceryChecks(weekStart) {
  *  and tab switch — never clobbers local checks with an empty remote result. */
 async function syncGroceryChecksIfVisible() {
   const groceryPanel = document.getElementById("panel-grocery");
-  if (!groceryPanel?.classList.contains("active")) return;
+  if (!groceryPanel?.classList.contains("active")) { console.log("[grocery-sync] sync skipped — grocery tab not active"); return; }
 
   const weekStart = _activeConfirmedWeek?.weekStartDate
     || currentPlan?.weekStartDate
     || null;
+  console.log("[grocery-sync] sync triggered, weekStart:", weekStart);
   if (!weekStart) return;
 
   const remoteChecked = await loadGroceryChecks(weekStart);
-  // null means no row in Supabase yet — keep whatever is checked locally
-  if (!remoteChecked) return;
+  if (!remoteChecked) { console.log("[grocery-sync] no remote data, keeping local state"); return; }
 
-  // Only re-render if remote actually differs from current in-memory state
   const same = remoteChecked.size === checked.size &&
     [...remoteChecked].every(k => checked.has(k));
+  console.log("[grocery-sync] remote size:", remoteChecked.size, "local size:", checked.size, "same:", same);
   if (same) return;
 
+  console.log("[grocery-sync] applying remote state");
   checked = remoteChecked;
   try { localStorage.setItem("grocery-checked:" + weekStart, JSON.stringify([...checked])); } catch(e) {}
   if (_activeConfirmedWeek) _renderGroceryFromConfirmed(_activeConfirmedWeek);
