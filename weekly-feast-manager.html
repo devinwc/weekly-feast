@@ -103,7 +103,37 @@
   .rm-btn { background:none; border:none; color:var(--ink-soft); cursor:pointer; font-size:18px; padding:0 4px; line-height:1; flex-shrink:0; }
   .rm-btn:hover { color:var(--red); }
 
-  /* Ingredient autocomplete */
+  .btn-kroger {
+    background:var(--blue-lt); color:var(--blue);
+    border-color:#BFDBFE; font-size:12px; padding:5px 10px;
+  }
+  .btn-kroger:hover { background:#DBEAFE; border-color:#93C5FD; }
+  .btn-kroger[disabled] { opacity:.4; pointer-events:none; }
+
+  /* ── KROGER PRICE MODAL ──────────────────────────────────────── */
+  .price-modal { max-width:640px; }
+  .price-ing-row { display:flex; flex-direction:column; gap:6px; padding:12px 0; border-bottom:1px solid var(--rule); }
+  .price-ing-row:last-child { border-bottom:none; }
+  .price-ing-name { font-size:13px; font-weight:500; color:var(--ink); }
+  .price-ing-qty { font-size:11px; color:var(--ink-soft); }
+  .price-result-card { background:var(--cream); border:1px solid var(--rule); border-radius:8px; padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
+  .price-result-card.linked { border-color:#BBF7D0; background:var(--green-lt); }
+  .price-result-top { display:flex; align-items:flex-start; gap:10px; }
+  .price-result-desc { flex:1; font-size:12px; font-weight:500; color:var(--ink); line-height:1.35; }
+  .price-result-price { font-family:var(--serif); font-size:18px; font-weight:700; color:var(--green); white-space:nowrap; }
+  .price-result-actions { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .price-not-found { font-size:12px; color:var(--ink-soft); font-style:italic; padding:4px 0; }
+  .price-loading { display:flex; align-items:center; gap:10px; padding:10px 0; font-size:13px; color:var(--ink-soft); }
+  .price-spinner { width:16px; height:16px; border:2px solid var(--rule); border-top-color:var(--amber); border-radius:50%; animation:spin .7s linear infinite; flex-shrink:0; }
+  .price-summary-bar { background:var(--amber-lt); border:1.5px solid #FDE68A; border-radius:9px; padding:12px 16px; margin-bottom:16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .price-summary-bar .summary-label { font-size:12px; color:var(--amber); font-weight:500; flex:1; }
+  .price-summary-bar .summary-total { font-family:var(--serif); font-size:22px; font-weight:700; color:var(--amber); }
+  .price-candidate-picker { display:flex; flex-direction:column; gap:4px; margin-top:6px; }
+  .price-candidate { display:flex; align-items:center; gap:8px; padding:7px 10px; border:1.5px solid var(--rule); border-radius:7px; cursor:pointer; transition:all var(--t); background:var(--paper); }
+  .price-candidate:hover { border-color:var(--amber); background:var(--amber-lt); }
+  .price-candidate.selected { border-color:var(--ink); background:var(--cream); }
+  .price-candidate-desc { flex:1; font-size:12px; font-weight:500; color:var(--ink); line-height:1.3; }
+  .price-candidate-price { font-size:13px; font-weight:700; color:var(--green); white-space:nowrap; }
   .ing-wrap { position:relative; flex:1; }
   .ing-wrap .form-input { width:100%; }
   .ing-dropdown {
@@ -483,6 +513,26 @@
 
 <!-- Toast container -->
 <div class="toast-container" id="toast-container"></div>
+
+<!-- Kroger Price Lookup Modal -->
+<div class="modal-backdrop" id="modal-kroger" onclick="closeModal('modal-kroger', event)">
+  <div class="modal price-modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="kroger-modal-title">💰 Kroger Prices</div>
+        <div class="modal-subtitle" id="kroger-modal-subtitle">Fetching prices…</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-kroger')">✕</button>
+    </div>
+    <div class="modal-body" id="kroger-modal-body">
+      <div class="price-loading"><div class="price-spinner"></div> Loading…</div>
+    </div>
+    <div class="modal-footer" id="kroger-modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-kroger')">Close</button>
+      <button class="btn btn-primary" id="kroger-save-btn" onclick="saveKrogerPrices()" disabled>💾 Save Prices</button>
+    </div>
+  </div>
+</div>
 
 <!-- Log Feedback Modal -->
 <div class="modal-backdrop" id="modal-feedback" onclick="closeModal('modal-feedback', event)">
@@ -1015,6 +1065,7 @@ function renderMealTable() {
       <td>${m.thumbedDown ? '<span class="thumbed-badge">👎 Excluded</span>' : '<span style="color:var(--ink-soft);font-size:12px">Active</span>'}</td>
       <td><div class="actions-cell">
         <button class="btn btn-outline btn-sm" onclick="startEdit('${m.id}')">Edit</button>
+        <button class="btn btn-kroger btn-sm" onclick="openKrogerModal('${m.id}')" title="Look up Kroger prices for ingredients">💰 Prices</button>
         <button class="btn btn-ghost btn-sm" onclick="shareFromManager('${m.id}', this)"
           title="${m.source_meal_id ? 'Already in Recipe Library' : 'Share to Recipe Library'}"
           ${m.source_meal_id ? 'disabled style="opacity:.45;cursor:default"' : ''}>
@@ -1752,6 +1803,222 @@ function attachIngAutocomplete(input) {
       renderDropdown(opts, input.value);
     }
   });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// KROGER PRICE LOOKUP
+// ═══════════════════════════════════════════════════════════════════
+
+let _krogerMealId   = null;
+let _krogerResults  = {};
+
+function escAttr(str) {
+  return String(str).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/'/g,"&#39;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+async function openKrogerModal(mealId) {
+  const meal = ML[mealId];
+  if (!meal) return;
+  _krogerMealId  = mealId;
+  _krogerResults = {};
+
+  const ings = (meal.ingredients || []).filter(i => i.name?.trim());
+  if (!ings.length) { toast("This meal has no ingredients to look up.", "error"); return; }
+
+  document.getElementById("kroger-modal-title").textContent    = `💰 ${meal.name}`;
+  document.getElementById("kroger-modal-subtitle").textContent = "Fetching prices from Kroger…";
+  document.getElementById("kroger-modal-body").innerHTML =
+    `<div class="price-loading" style="padding:30px 0;justify-content:center"><div class="price-spinner"></div><span>Contacting Kroger…</span></div>`;
+  document.getElementById("kroger-save-btn").disabled = true;
+  document.getElementById("modal-kroger").classList.add("open");
+
+  try {
+    const res = await fetch(`${SB_URL}/functions/v1/kroger-price`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SB_KEY}` },
+      body: JSON.stringify({ ingredients: ings.map(i => ({ name: i.name, quantity: i.quantity })) }),
+    });
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `HTTP ${res.status}`); }
+    const data = await res.json();
+    document.getElementById("kroger-modal-subtitle").textContent = `Results from Kroger (location ${data.locationId})`;
+
+    for (const ing of ings) {
+      const r = data.results?.[ing.name];
+      const saved = ing.kroger || null;
+      _krogerResults[ing.name] = {
+        ingredientRef: ing,
+        apiResult:     r || null,
+        chosen:        r?.found ? r : null,
+        manualPrice:   saved?.price ?? null,
+        linked:        saved?.url   ?? null,
+        productId:     saved?.productId ?? null,
+      };
+    }
+    renderKrogerModal(meal, ings);
+  } catch(err) {
+    document.getElementById("kroger-modal-body").innerHTML =
+      `<div style="padding:24px;text-align:center;color:var(--red)">
+        <div style="font-size:24px;margin-bottom:8px">⚠️</div>
+        <div style="font-size:13px;font-weight:500">Could not fetch Kroger prices</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:6px">${err.message}</div>
+      </div>`;
+  }
+}
+
+function renderKrogerModal(meal, ings) {
+  const body    = document.getElementById("kroger-modal-body");
+  const saveBtn = document.getElementById("kroger-save-btn");
+  saveBtn.disabled = false;
+
+  function computeTotal() {
+    let total = 0;
+    for (const [,state] of Object.entries(_krogerResults)) {
+      const p = state.manualPrice !== null ? parseFloat(state.manualPrice) : (state.chosen?.price ?? state.ingredientRef.estimatedCost ?? 0);
+      total += isNaN(p) ? 0 : p;
+    }
+    return total.toFixed(2);
+  }
+
+  function renderIngRow(ing) {
+    const state  = _krogerResults[ing.name];
+    const chosen = state?.chosen;
+    const displayPrice = state.manualPrice !== null ? parseFloat(state.manualPrice) : (chosen?.price ?? null);
+    const priceStr = displayPrice !== null ? `$${parseFloat(displayPrice).toFixed(2)}` : "—";
+    const isLinked = !!state.linked;
+    const candidates = chosen?.candidates || (chosen ? [chosen] : []);
+
+    let resultHtml = "";
+    if (!state.apiResult?.found) {
+      resultHtml = `<div class="price-not-found">No Kroger match — enter price manually:</div>
+        <div style="display:flex;gap:6px;align-items:center;margin-top:6px">
+          <span style="font-size:12px;color:var(--ink-soft)">$</span>
+          <input type="number" step="0.01" min="0" placeholder="0.00"
+            value="${state.manualPrice ?? (ing.estimatedCost||'')}"
+            data-manual-ing="${escAttr(ing.name)}"
+            style="width:90px;padding:5px 8px;border:1.5px solid var(--rule);border-radius:7px;font-size:13px">
+        </div>`;
+    } else {
+      const promoHtml = chosen?.promo != null && chosen.promo < chosen.price
+        ? `<span style="font-size:11px;color:var(--green);font-weight:500;margin-left:6px">🏷 $${chosen.promo.toFixed(2)} sale</span>` : "";
+      const candidatesHtml = candidates.length > 1
+        ? `<details style="margin-top:8px"><summary style="font-size:11px;color:var(--ink-soft);cursor:pointer">▸ ${candidates.length} options — pick a different match</summary>
+            <div class="price-candidate-picker" style="margin-top:8px">${candidates.map(c => {
+              const isSel = chosen?.productId === c.productId;
+              return `<div class="price-candidate${isSel?" selected":""}" onclick="selectKrogerCandidate('${escAttr(ing.name)}','${escAttr(JSON.stringify(c))}')">
+                <div class="price-candidate-desc">${c.description}${c.brand?` — <span style="color:var(--ink-soft)">${c.brand}</span>`:""}${c.size?` · <span style="color:var(--ink-soft)">${c.size}</span>`:""}</div>
+                <div class="price-candidate-price">${c.price!=null?"$"+c.price.toFixed(2):"—"}</div>
+              </div>`;
+            }).join("")}</div></details>` : "";
+
+      resultHtml = `<div class="price-result-card${isLinked?" linked":""}">
+        <div class="price-result-top">
+          <div style="flex:1">
+            <div class="price-result-desc">${chosen?.description||"—"}${chosen?.brand?` <span style="color:var(--ink-soft);font-weight:400">· ${chosen.brand}</span>`:""}${chosen?.size?` <span style="color:var(--ink-soft);font-weight:400">· ${chosen.size}</span>`:""}</div>
+            <div style="margin-top:3px;font-size:11px">
+              ${isLinked?`<a href="${state.linked}" target="_blank" rel="noopener" style="color:var(--blue)">🔗 Linked ↗</a>`:(chosen?.url?`<a href="${chosen.url}" target="_blank" rel="noopener" style="color:var(--amber)">View on Kroger ↗</a>`:"")}
+            </div>
+          </div>
+          <div class="price-result-price">${priceStr}${promoHtml}</div>
+        </div>
+        <div class="price-result-actions">
+          ${isLinked
+            ? `<button class="btn btn-ghost btn-sm" onclick="unlinkKroger('${escAttr(ing.name)}')">Unlink</button>`
+            : `<button class="btn btn-outline btn-sm" onclick="linkKroger('${escAttr(ing.name)}')">🔗 Use this</button>`}
+          <span style="color:var(--rule);font-size:12px">|</span>
+          <span style="font-size:11px;color:var(--ink-soft)">Override:</span>
+          <input type="number" step="0.01" min="0" placeholder="Custom $"
+            value="${state.manualPrice??""}"
+            data-manual-ing="${escAttr(ing.name)}"
+            style="width:90px;padding:4px 8px;border:1.5px solid var(--rule);border-radius:7px;font-size:12px">
+        </div>
+        ${candidatesHtml}
+      </div>`;
+    }
+
+    return `<div class="price-ing-row">
+      <div class="price-ing-name">${ing.name}</div>
+      ${ing.quantity?`<div class="price-ing-qty">${ing.quantity}</div>`:""}
+      ${resultHtml}
+    </div>`;
+  }
+
+  body.innerHTML = `
+    <div class="price-summary-bar">
+      <div class="summary-label">Estimated cost from Kroger</div>
+      <div class="summary-total">$${computeTotal()}</div>
+    </div>
+    ${ings.map(ing => renderIngRow(ing)).join("")}`;
+
+  body.querySelectorAll("[data-manual-ing]").forEach(inp => {
+    inp.addEventListener("input", e => {
+      _krogerResults[e.target.dataset.manualIng].manualPrice = e.target.value;
+      const totalEl = body.querySelector(".summary-total");
+      if (totalEl) totalEl.textContent = `$${computeTotal()}`;
+    });
+  });
+}
+
+function selectKrogerCandidate(ingName, candidateJson) {
+  try {
+    const c = JSON.parse(candidateJson);
+    const state = _krogerResults[ingName];
+    if (!state) return;
+    state.chosen = c; state.manualPrice = null; state.linked = null; state.productId = c.productId;
+    const meal = ML[_krogerMealId];
+    renderKrogerModal(meal, (meal?.ingredients||[]).filter(i=>i.name?.trim()));
+  } catch(e) { console.warn("selectKrogerCandidate error", e); }
+}
+
+function linkKroger(ingName) {
+  const state = _krogerResults[ingName];
+  if (!state?.chosen) return;
+  state.linked = state.chosen.url; state.productId = state.chosen.productId;
+  const meal = ML[_krogerMealId];
+  renderKrogerModal(meal, (meal?.ingredients||[]).filter(i=>i.name?.trim()));
+}
+
+function unlinkKroger(ingName) {
+  const state = _krogerResults[ingName];
+  if (!state) return;
+  state.linked = null; state.productId = null;
+  const meal = ML[_krogerMealId];
+  renderKrogerModal(meal, (meal?.ingredients||[]).filter(i=>i.name?.trim()));
+}
+
+async function saveKrogerPrices() {
+  const meal = ML[_krogerMealId];
+  if (!meal) return;
+  const saveBtn = document.getElementById("kroger-save-btn");
+  saveBtn.disabled = true; saveBtn.textContent = "Saving…";
+
+  let newTotal = 0;
+  meal.ingredients = (meal.ingredients||[]).map(ing => {
+    const state = _krogerResults[ing.name];
+    if (!state) return ing;
+    const price = state.manualPrice !== null && state.manualPrice !== ""
+      ? parseFloat(state.manualPrice) : (state.chosen?.price ?? ing.estimatedCost ?? 0);
+    newTotal += isNaN(price) ? 0 : price;
+    return {
+      ...ing,
+      estimatedCost: isNaN(price) ? ing.estimatedCost : Math.round(price*100)/100,
+      kroger: state.chosen || state.apiResult ? {
+        productId:   state.productId || state.chosen?.productId || null,
+        description: state.chosen?.description || null,
+        price:       isNaN(price) ? null : Math.round(price*100)/100,
+        url:         state.linked || state.chosen?.url || null,
+        lockedAt:    new Date().toISOString().split("T")[0],
+      } : (ing.kroger || null),
+    };
+  });
+
+  meal.totalCostEstimate = Math.round(newTotal*100)/100;
+  ML = buildLookup();
+  await saveMealToDB(meal);
+
+  saveBtn.disabled = false; saveBtn.textContent = "💾 Save Prices";
+  toast(`Prices saved for "${meal.name}" — total $${meal.totalCostEstimate}`, "success");
+  closeModal("modal-kroger");
+  renderMealTable();
 }
 
 </script>
