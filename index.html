@@ -1112,6 +1112,8 @@ function showLatestConfirmedOnHome() {
 /** Builds a synthetic plan from a confirmed week snapshot and renders the grocery list. */
 function _renderGroceryFromConfirmed(week) {
   const fakePlan = {
+    weekStartDate: week.weekStartDate,
+    id: week.weekStartDate,
     days: week.days.map(d => ({
       ...d,
       meals: Object.fromEntries(
