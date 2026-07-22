@@ -200,6 +200,10 @@
   .item-cost { font-size:11px; color:var(--ink-soft); width:42px; text-align:right; }
   .item-meals { font-size:10px; color:var(--ink-soft); opacity:.7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:120px; }
 
+  .item-name.no-walmart-link { color:var(--amber); font-weight:600; }
+  .grocery-item.checked .item-name.no-walmart-link { color:var(--ink-soft); font-weight:400; } /* don't fight the checked-out styling */
+  .no-link-badge { font-size:9px; font-weight:600; letter-spacing:.03em; text-transform:uppercase; color:var(--amber); background:var(--amber-lt); border:1px solid #FDE68A; border-radius:5px; padding:2px 6px; white-space:nowrap; flex-shrink:0; }
+
   /* Grocery progress bar */
   .grocery-progress-wrap { margin-bottom:20px; }
   .grocery-progress-label { display:flex; justify-content:space-between; font-size:12px; color:var(--ink-soft); margin-bottom:6px; }
@@ -1660,8 +1664,10 @@ function groceryList(plan) {
 // Builds a one-tap Walmart cart link from a groceryList() result.
 // Items without a linked Walmart item (or with a same-name conflict
 // across recipes) are returned separately so the UI can flag them.
-function buildWalmartCartUrl(groceryListResult) {
-  const items = Object.values(groceryListResult.grp).flat();
+// excludeKeys: norm()'d names to skip — used for items already checked
+// off because the person already has them at home.
+function buildWalmartCartUrl(groceryListResult, excludeKeys = new Set()) {
+  const items = Object.values(groceryListResult.grp).flat().filter(i => !excludeKeys.has(norm(i.name)));
   const linked = items.filter(i => i.walmartId);
   const unresolved = items.filter(i => !i.walmartId);
 
@@ -1681,14 +1687,49 @@ let _activeConfirmedWeek = null; // confirmed week currently displayed (may diff
 let checked              = new Set();
 let _currentGroceryResult = null; // last groceryList() result, kept for the Send to Walmart button
 
+// Recomputes the Send to Walmart button label and the conflict note,
+// excluding anything already checked off (= "I already have this").
+function updateWalmartButton() {
+  if (!_currentGroceryResult) return;
+  const items = Object.values(_currentGroceryResult.grp).flat().filter(i => !checked.has(norm(i.name)));
+  const linkedCount = items.filter(i => i.walmartId).length;
+  const conflictCount = items.filter(i => i.walmartConflict).length;
+  const walmartBtn = document.getElementById("send-to-walmart-btn");
+  const noteEl = document.getElementById("walmart-unresolved-note");
+  if (linkedCount > 0) {
+    walmartBtn.style.display = "inline-flex";
+    walmartBtn.textContent = `🛒 Send to Walmart (${linkedCount})`;
+  } else {
+    walmartBtn.style.display = "none";
+  }
+  if (conflictCount > 0) {
+    noteEl.style.display = "block";
+    noteEl.textContent = `⚠️ ${conflictCount} item${conflictCount > 1 ? "s" : ""} linked to different Walmart products across recipes — check the recipe manager to pick one.`;
+  } else {
+    noteEl.style.display = "none";
+  }
+}
+
 function sendToWalmart() {
   if (!_currentGroceryResult) return;
-  const { cartUrl, unresolved } = buildWalmartCartUrl(_currentGroceryResult);
+  const weekStart = _activeConfirmedWeek?.weekStartDate || currentPlan?.weekStartDate || "default";
+  const sentKey = "walmart-sent:" + weekStart;
+
+  let lastSent = null;
+  try { lastSent = localStorage.getItem(sentKey); } catch(e) {}
+  if (lastSent) {
+    const when = new Date(lastSent);
+    const proceed = confirm(`You already sent this week's grocery list to Walmart (${when.toLocaleString()}). Send again? This may add duplicate items to your cart.`);
+    if (!proceed) return;
+  }
+
+  const { cartUrl, unresolved } = buildWalmartCartUrl(_currentGroceryResult, checked);
   if (!cartUrl) {
-    alert("No ingredients are linked to Walmart items yet — add links in the recipe manager.");
+    alert("No unchecked ingredients are linked to Walmart items yet — add links in the recipe manager, or you've already got everything covered.");
     return;
   }
   window.open(cartUrl, "_blank");
+  try { localStorage.setItem(sentKey, new Date().toISOString()); } catch(e) {}
   const missing = unresolved.filter(i => !i.walmartConflict).length;
   if (missing > 0) {
     alert(`Opened Walmart cart — ${missing} item${missing > 1 ? "s" : ""} weren't linked and need adding manually.`);
@@ -1920,23 +1961,7 @@ function _buildGroceryDOM(g, weekStart) {
   // Keep the latest grocery list result around so the Send to Walmart
   // button can build its link without re-running groceryList().
   _currentGroceryResult = g;
-  const items = Object.values(g.grp).flat();
-  const linkedCount = items.filter(i => i.walmartId).length;
-  const conflictCount = items.filter(i => i.walmartConflict).length;
-  const walmartBtn = document.getElementById("send-to-walmart-btn");
-  const noteEl = document.getElementById("walmart-unresolved-note");
-  if (linkedCount > 0) {
-    walmartBtn.style.display = "inline-flex";
-    walmartBtn.textContent = `🛒 Send to Walmart (${linkedCount})`;
-  } else {
-    walmartBtn.style.display = "none";
-  }
-  if (conflictCount > 0) {
-    noteEl.style.display = "block";
-    noteEl.textContent = `⚠️ ${conflictCount} item${conflictCount > 1 ? "s" : ""} linked to different Walmart products across recipes — check the recipe manager to pick one.`;
-  } else {
-    noteEl.style.display = "none";
-  }
+  updateWalmartButton();
 
   const EMOJI = {"Produce":"🥦","Meat & Seafood":"🥩","Dairy & Eggs":"🥛","Bread & Bakery":"🍞","Pantry":"🫙","Canned & Jarred":"🥫","Other":"📦"};
 
@@ -1944,9 +1969,11 @@ function _buildGroceryDOM(g, weekStart) {
     const key = norm(item.name);
     const ck = checked.has(key);
     const mealLabel = item.meals.length ? item.meals.join(", ") : "";
+    const noLink = !item.walmartId;
     return `<div class="grocery-item ${ck ? "checked" : ""}" onclick="toggleItem('${key}','${weekStart}',this)">
       <div class="item-check">${ck ? "✓" : ""}</div>
-      <span class="item-name">${item.name}</span>
+      <span class="item-name${noLink ? " no-walmart-link" : ""}">${item.name}</span>
+      ${noLink ? `<span class="no-link-badge" title="${item.walmartConflict ? "Linked to different Walmart products across recipes" : "No Walmart item linked"}">${item.walmartConflict ? "⚠ conflict" : "no link"}</span>` : ""}
       ${mealLabel ? `<span class="item-meals" title="${mealLabel}">${mealLabel}</span>` : ""}
       <span class="item-qty">${item.qty}</span>
       <span class="item-cost">${item.cost > 0 ? "$" + item.cost.toFixed(2) : ""}</span>
@@ -2117,6 +2144,7 @@ function toggleItem(key, weekStart, el) {
   saveGroceryChecks(weekStart);
 
   updateGroceryProgress();
+  updateWalmartButton();
 }
 
 function uncheckAll() {
