@@ -110,6 +110,13 @@
   .btn-kroger:hover { background:#DBEAFE; border-color:#93C5FD; }
   .btn-kroger[disabled] { opacity:.4; pointer-events:none; }
 
+  .btn-walmart {
+    background:#FEF3C7; color:#92400E;
+    border-color:#FDE68A; font-size:12px; padding:5px 10px;
+  }
+  .btn-walmart:hover { background:#FDE68A; border-color:#FCD34D; }
+  .btn-walmart[disabled] { opacity:.4; pointer-events:none; }
+
   /* ── KROGER PRICE MODAL ──────────────────────────────────────── */
   .price-modal { max-width:640px; }
   .price-ing-row { display:flex; flex-direction:column; gap:6px; padding:12px 0; border-bottom:1px solid var(--rule); }
@@ -530,6 +537,26 @@
     <div class="modal-footer" id="kroger-modal-footer">
       <button class="btn btn-outline" onclick="closeModal('modal-kroger')">Close</button>
       <button class="btn btn-primary" id="kroger-save-btn" onclick="saveKrogerPrices()" disabled>💾 Save Prices</button>
+    </div>
+  </div>
+</div>
+
+<!-- Walmart Item Linking Modal -->
+<div class="modal-backdrop" id="modal-walmart" onclick="closeModal('modal-walmart', event)">
+  <div class="modal price-modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="walmart-modal-title">🛒 Walmart Items</div>
+        <div class="modal-subtitle" id="walmart-modal-subtitle">Paste the Walmart product link for each ingredient you buy there.</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-walmart')">✕</button>
+    </div>
+    <div class="modal-body" id="walmart-modal-body">
+      <div class="price-loading"><div class="price-spinner"></div> Loading…</div>
+    </div>
+    <div class="modal-footer" id="walmart-modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-walmart')">Close</button>
+      <button class="btn btn-primary" id="walmart-save-btn" onclick="saveWalmartLinks()">💾 Save Links</button>
     </div>
   </div>
 </div>
@@ -1066,6 +1093,7 @@ function renderMealTable() {
       <td><div class="actions-cell">
         <button class="btn btn-outline btn-sm" onclick="startEdit('${m.id}')">Edit</button>
         <button class="btn btn-kroger btn-sm" onclick="openKrogerModal('${m.id}')" title="Look up Kroger prices for ingredients">💰 Prices</button>
+        <button class="btn btn-walmart btn-sm" onclick="openWalmartModal('${m.id}')" title="Link Walmart items for ingredients">🛒 Walmart</button>
         <button class="btn btn-ghost btn-sm" onclick="shareFromManager('${m.id}', this)"
           title="${m.source_meal_id ? 'Already in Recipe Library' : 'Share to Recipe Library'}"
           ${m.source_meal_id ? 'disabled style="opacity:.45;cursor:default"' : ''}>
@@ -2018,6 +2046,133 @@ async function saveKrogerPrices() {
   saveBtn.disabled = false; saveBtn.textContent = "💾 Save Prices";
   toast(`Prices saved for "${meal.name}" — total $${meal.totalCostEstimate}`, "success");
   closeModal("modal-kroger");
+  renderMealTable();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// WALMART ITEM LINKING
+// (No public Walmart product-search API exists for this, so this is
+// manual entry — paste the product URL, we pull the item ID out of it.
+// Mirrors the shape of ing.kroger so the grocery list / cart builder
+// can treat both the same way.)
+// ═══════════════════════════════════════════════════════════════════
+
+let _walmartMealId  = null;
+let _walmartResults = {};
+
+// Pulls the numeric item ID out of a Walmart product URL, e.g.
+// https://www.walmart.com/ip/product-name/435209117  ->  "435209117"
+// Falls back to treating the input as a bare ID if it's just digits.
+function extractWalmartItemId(input) {
+  if (!input) return null;
+  const trimmed = input.trim();
+  if (/^\d+$/.test(trimmed)) return trimmed;
+  const m = trimmed.match(/\/ip\/[^/]+\/(\d+)/) || trimmed.match(/(\d{6,})/);
+  return m ? m[1] : null;
+}
+
+function openWalmartModal(mealId) {
+  const meal = ML[mealId];
+  if (!meal) return;
+  _walmartMealId  = mealId;
+  _walmartResults = {};
+
+  const ings = (meal.ingredients || []).filter(i => i.name?.trim());
+  if (!ings.length) { toast("This meal has no ingredients to link.", "error"); return; }
+
+  for (const ing of ings) {
+    const saved = ing.walmart || null;
+    _walmartResults[ing.name] = {
+      urlInput:    saved?.url || "",
+      productId:   saved?.productId || null,
+      description: saved?.description || "",
+      price:       saved?.price ?? "",
+    };
+  }
+
+  document.getElementById("walmart-modal-title").textContent = `🛒 ${meal.name}`;
+  document.getElementById("modal-walmart").classList.add("open");
+  renderWalmartModal(meal, ings);
+}
+
+function renderWalmartModal(meal, ings) {
+  const body = document.getElementById("walmart-modal-body");
+
+  function renderIngRow(ing) {
+    const state = _walmartResults[ing.name];
+    const linked = !!state.productId;
+
+    return `<div class="price-ing-row">
+      <div class="price-ing-name">${ing.name}</div>
+      ${ing.quantity ? `<div class="price-ing-qty">${ing.quantity}</div>` : ""}
+      <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap">
+        <input type="text" placeholder="Paste Walmart product URL or item ID"
+          value="${escAttr(state.urlInput)}"
+          data-walmart-url="${escAttr(ing.name)}"
+          style="flex:1;min-width:220px;padding:5px 8px;border:1.5px solid var(--rule);border-radius:7px;font-size:12px">
+        <input type="number" step="0.01" min="0" placeholder="Price $"
+          value="${state.price}"
+          data-walmart-price="${escAttr(ing.name)}"
+          style="width:90px;padding:5px 8px;border:1.5px solid var(--rule);border-radius:7px;font-size:12px">
+      </div>
+      <div style="margin-top:4px;font-size:11px;color:${linked ? 'var(--green)' : 'var(--ink-soft)'}" data-walmart-status="${escAttr(ing.name)}">
+        ${linked ? `✓ Item ID ${state.productId}` : "Not linked yet"}
+      </div>
+    </div>`;
+  }
+
+  body.innerHTML = ings.map(ing => renderIngRow(ing)).join("");
+
+  body.querySelectorAll("[data-walmart-url]").forEach(inp => {
+    inp.addEventListener("input", e => {
+      const name = e.target.dataset.walmartUrl;
+      const state = _walmartResults[name];
+      state.urlInput = e.target.value;
+      state.productId = extractWalmartItemId(e.target.value);
+      const statusEl = body.querySelector(`[data-walmart-status="${CSS.escape(name)}"]`);
+      if (statusEl) {
+        statusEl.textContent = state.productId ? `✓ Item ID ${state.productId}` : "Not linked yet — couldn't find an item ID in that";
+        statusEl.style.color = state.productId ? "var(--green)" : "var(--red)";
+      }
+    });
+  });
+
+  body.querySelectorAll("[data-walmart-price]").forEach(inp => {
+    inp.addEventListener("input", e => {
+      _walmartResults[e.target.dataset.walmartPrice].price = e.target.value;
+    });
+  });
+}
+
+async function saveWalmartLinks() {
+  const meal = ML[_walmartMealId];
+  if (!meal) return;
+  const saveBtn = document.getElementById("walmart-save-btn");
+  saveBtn.disabled = true; saveBtn.textContent = "Saving…";
+
+  meal.ingredients = (meal.ingredients || []).map(ing => {
+    const state = _walmartResults[ing.name];
+    if (!state) return ing;
+    if (!state.productId) return { ...ing, walmart: null };
+    const price = state.price !== "" && !isNaN(parseFloat(state.price)) ? Math.round(parseFloat(state.price) * 100) / 100 : null;
+    return {
+      ...ing,
+      walmart: {
+        productId:   state.productId,
+        description: state.description || null,
+        price,
+        url:         state.urlInput,
+        lockedAt:    new Date().toISOString().split("T")[0],
+      },
+    };
+  });
+
+  ML = buildLookup();
+  await saveMealToDB(meal);
+
+  saveBtn.disabled = false; saveBtn.textContent = "💾 Save Links";
+  toast(`Walmart links saved for "${meal.name}"`, "success");
+  closeModal("modal-walmart");
   renderMealTable();
 }
 

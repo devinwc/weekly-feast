@@ -556,8 +556,10 @@
         <span class="grocery-stat"><strong id="grocery-item-count">0</strong> items</span>
         <span class="grocery-stat">Est. <strong id="grocery-cost">$0</strong></span>
         <button class="btn btn-ghost" onclick="uncheckAll()">Uncheck all</button>
+        <button class="btn btn-outline" id="send-to-walmart-btn" onclick="sendToWalmart()" style="display:none">🛒 Send to Walmart</button>
       </div>
     </div>
+    <div id="walmart-unresolved-note" style="display:none;margin:0 0 12px;font-size:12px;color:var(--ink-soft)"></div>
     <div class="grocery-progress-wrap" id="grocery-progress-wrap" style="display:none">
       <div class="grocery-progress-label">
         <span id="grocery-progress-label">0 of 0 items checked off</span>
@@ -1627,25 +1629,47 @@ function groceryList(plan) {
     const meal=ML[mid]; if(!meal||!meal.ingredients) continue;
     for(const ing of meal.ingredients) {
       const key=norm(ing.name);
-      if(!raw[key]) raw[key]={n:ing.name,qty:[],cost:0,meals:new Set()};
+      if(!raw[key]) raw[key]={n:ing.name,qty:[],cost:0,meals:new Set(),walmartIds:new Set()};
       if(ing.quantity) raw[key].qty.push(ing.quantity);
       raw[key].cost+=ing.estimatedCost||0;
       raw[key].meals.add(meal.name);
+      if(ing.walmart?.productId) raw[key].walmartIds.add(ing.walmart.productId);
     }
   }
   const grp={};
   for(const [,d] of Object.entries(raw)) {
     const c=cat(d.n); if(!grp[c]) grp[c]=[];
+    const walmartIds=[...d.walmartIds];
     grp[c].push({
       name: d.n,
       qty:  [...new Set(d.qty)].join(", ")||"as needed",
       cost: Math.round(d.cost*100)/100,
       meals:[...d.meals],
+      // If two recipes locked different Walmart items under the same
+      // normalized name, we don't guess — surface it as unresolved so the
+      // person picks one rather than silently dropping/duplicating an item.
+      walmartId: walmartIds.length===1 ? walmartIds[0] : null,
+      walmartConflict: walmartIds.length>1 ? walmartIds : null,
     });
   }
   for(const c of Object.keys(grp)) grp[c].sort((a,b)=>a.name.localeCompare(b.name));
   const ORD=["Produce","Meat & Seafood","Dairy & Eggs","Bread & Bakery","Canned & Jarred","Pantry","Other"];
   return { grp, ORD, total:Object.values(grp).flat().length, cost:Math.round(Object.values(grp).flat().reduce((s,i)=>s+i.cost,0)*100)/100 };
+}
+
+// Builds a one-tap Walmart cart link from a groceryList() result.
+// Items without a linked Walmart item (or with a same-name conflict
+// across recipes) are returned separately so the UI can flag them.
+function buildWalmartCartUrl(groceryListResult) {
+  const items = Object.values(groceryListResult.grp).flat();
+  const linked = items.filter(i => i.walmartId);
+  const unresolved = items.filter(i => !i.walmartId);
+
+  if (!linked.length) return { cartUrl: null, unresolved };
+
+  const pairs = linked.map(i => `${i.walmartId}_1`); // qty locked to 1 per line; Walmart lets you adjust in-cart
+  const cartUrl = `https://www.walmart.com/sc/cart/addToCart?items=${pairs.join(",")}`;
+  return { cartUrl, unresolved };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1655,6 +1679,21 @@ function groceryList(plan) {
 let currentPlan          = null;
 let _activeConfirmedWeek = null; // confirmed week currently displayed (may differ from currentPlan)
 let checked              = new Set();
+let _currentGroceryResult = null; // last groceryList() result, kept for the Send to Walmart button
+
+function sendToWalmart() {
+  if (!_currentGroceryResult) return;
+  const { cartUrl, unresolved } = buildWalmartCartUrl(_currentGroceryResult);
+  if (!cartUrl) {
+    alert("No ingredients are linked to Walmart items yet — add links in the recipe manager.");
+    return;
+  }
+  window.open(cartUrl, "_blank");
+  const missing = unresolved.filter(i => !i.walmartConflict).length;
+  if (missing > 0) {
+    alert(`Opened Walmart cart — ${missing} item${missing > 1 ? "s" : ""} weren't linked and need adding manually.`);
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // DATE HELPERS
@@ -1877,6 +1916,27 @@ function _buildGroceryDOM(g, weekStart) {
   document.getElementById("grocery-item-count").textContent = g.total;
   document.getElementById("grocery-cost").textContent = `$${g.cost}`;
   document.getElementById("grocery-progress-wrap").style.display = "block";
+
+  // Keep the latest grocery list result around so the Send to Walmart
+  // button can build its link without re-running groceryList().
+  _currentGroceryResult = g;
+  const items = Object.values(g.grp).flat();
+  const linkedCount = items.filter(i => i.walmartId).length;
+  const conflictCount = items.filter(i => i.walmartConflict).length;
+  const walmartBtn = document.getElementById("send-to-walmart-btn");
+  const noteEl = document.getElementById("walmart-unresolved-note");
+  if (linkedCount > 0) {
+    walmartBtn.style.display = "inline-flex";
+    walmartBtn.textContent = `🛒 Send to Walmart (${linkedCount})`;
+  } else {
+    walmartBtn.style.display = "none";
+  }
+  if (conflictCount > 0) {
+    noteEl.style.display = "block";
+    noteEl.textContent = `⚠️ ${conflictCount} item${conflictCount > 1 ? "s" : ""} linked to different Walmart products across recipes — check the recipe manager to pick one.`;
+  } else {
+    noteEl.style.display = "none";
+  }
 
   const EMOJI = {"Produce":"🥦","Meat & Seafood":"🥩","Dairy & Eggs":"🥛","Bread & Bakery":"🍞","Pantry":"🫙","Canned & Jarred":"🥫","Other":"📦"};
 
