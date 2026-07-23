@@ -2060,6 +2060,24 @@ async function saveKrogerPrices() {
 let _walmartMealId  = null;
 let _walmartResults = {};
 
+// Same light normalization used in index.html's grocery aggregation
+// (lowercase, trim, strip a trailing "s") so "onion" and "onions" —
+// or the same ingredient across two recipes — count as the same thing.
+function norm(n) { return (n || "").toLowerCase().trim().replace(/s$/, ""); }
+
+// Looks across every recipe already in MEALS for an ingredient whose
+// normalized name matches, and that already has a Walmart link saved.
+// Returns the first match found, or null.
+function findExistingWalmartLink(ingredientName) {
+  const key = norm(ingredientName);
+  for (const m of MEALS) {
+    for (const ing of (m.ingredients || [])) {
+      if (norm(ing.name) === key && ing.walmart?.productId) return ing.walmart;
+    }
+  }
+  return null;
+}
+
 // Pulls the numeric item ID out of a Walmart product URL, e.g.
 // https://www.walmart.com/ip/product-name/435209117  ->  "435209117"
 // Falls back to treating the input as a bare ID if it's just digits.
@@ -2082,11 +2100,14 @@ function openWalmartModal(mealId) {
 
   for (const ing of ings) {
     const saved = ing.walmart || null;
+    const reuse = !saved ? findExistingWalmartLink(ing.name) : null;
+    const source = saved || reuse;
     _walmartResults[ing.name] = {
-      urlInput:    saved?.url || "",
-      productId:   saved?.productId || null,
-      description: saved?.description || "",
-      price:       saved?.price ?? "",
+      urlInput:    source?.url || "",
+      productId:   source?.productId || null,
+      description: source?.description || "",
+      price:       source?.price ?? "",
+      reused:      !saved && !!reuse,
     };
   }
 
@@ -2115,8 +2136,8 @@ function renderWalmartModal(meal, ings) {
           data-walmart-price="${escAttr(ing.name)}"
           style="width:90px;padding:5px 8px;border:1.5px solid var(--rule);border-radius:7px;font-size:12px">
       </div>
-      <div style="margin-top:4px;font-size:11px;color:${linked ? 'var(--green)' : 'var(--ink-soft)'}" data-walmart-status="${escAttr(ing.name)}">
-        ${linked ? `✓ Item ID ${state.productId}` : "Not linked yet"}
+      <div style="margin-top:4px;font-size:11px;color:${linked ? (state.reused ? 'var(--amber)' : 'var(--green)') : 'var(--ink-soft)'}" data-walmart-status="${escAttr(ing.name)}">
+        ${linked ? (state.reused ? `🔁 Reused from another recipe — Item ID ${state.productId}` : `✓ Item ID ${state.productId}`) : "Not linked yet"}
       </div>
     </div>`;
   }
@@ -2129,6 +2150,7 @@ function renderWalmartModal(meal, ings) {
       const state = _walmartResults[name];
       state.urlInput = e.target.value;
       state.productId = extractWalmartItemId(e.target.value);
+      state.reused = false; // user is now editing this by hand, it's no longer just an inherited match
       const statusEl = body.querySelector(`[data-walmart-status="${CSS.escape(name)}"]`);
       if (statusEl) {
         statusEl.textContent = state.productId ? `✓ Item ID ${state.productId}` : "Not linked yet — couldn't find an item ID in that";
@@ -2150,28 +2172,58 @@ async function saveWalmartLinks() {
   const saveBtn = document.getElementById("walmart-save-btn");
   saveBtn.disabled = true; saveBtn.textContent = "Saving…";
 
+  const linkedThisSave = []; // {key, walmart} — used to propagate to other recipes below
+
   meal.ingredients = (meal.ingredients || []).map(ing => {
     const state = _walmartResults[ing.name];
     if (!state) return ing;
     if (!state.productId) return { ...ing, walmart: null };
     const price = state.price !== "" && !isNaN(parseFloat(state.price)) ? Math.round(parseFloat(state.price) * 100) / 100 : null;
-    return {
-      ...ing,
-      walmart: {
-        productId:   state.productId,
-        description: state.description || null,
-        price,
-        url:         state.urlInput,
-        lockedAt:    new Date().toISOString().split("T")[0],
-      },
+    const walmart = {
+      productId:   state.productId,
+      description: state.description || null,
+      price,
+      url:         state.urlInput,
+      lockedAt:    new Date().toISOString().split("T")[0],
     };
+    linkedThisSave.push({ key: norm(ing.name), walmart });
+    return { ...ing, walmart };
   });
 
   ML = buildLookup();
   await saveMealToDB(meal);
 
+  // Carry each newly-linked item over to the same ingredient in other
+  // recipes that don't have a Walmart link yet, so you only have to
+  // find the item ID once per ingredient rather than once per recipe.
+  const otherMealsToSave = new Map(); // id -> meal
+  for (const otherMeal of MEALS) {
+    if (otherMeal.id === meal.id) continue;
+    let changed = false;
+    otherMeal.ingredients = (otherMeal.ingredients || []).map(ing => {
+      if (ing.walmart?.productId) return ing; // already linked in this recipe — don't overwrite
+      const match = linkedThisSave.find(l => l.key === norm(ing.name));
+      if (!match) return ing;
+      changed = true;
+      return { ...ing, walmart: match.walmart };
+    });
+    if (changed) otherMealsToSave.set(otherMeal.id, otherMeal);
+  }
+
+  let propagatedCount = 0;
+  for (const otherMeal of otherMealsToSave.values()) {
+    await saveMealToDB(otherMeal);
+    propagatedCount++;
+  }
+  if (propagatedCount > 0) ML = buildLookup();
+
   saveBtn.disabled = false; saveBtn.textContent = "💾 Save Links";
-  toast(`Walmart links saved for "${meal.name}"`, "success");
+  toast(
+    propagatedCount > 0
+      ? `Walmart links saved for "${meal.name}" — also carried over to ${propagatedCount} other recipe${propagatedCount > 1 ? "s" : ""}`
+      : `Walmart links saved for "${meal.name}"`,
+    "success"
+  );
   closeModal("modal-walmart");
   renderMealTable();
 }
