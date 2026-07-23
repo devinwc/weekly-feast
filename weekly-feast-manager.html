@@ -1195,12 +1195,24 @@ async function saveMeal() {
   const cook = parseInt(document.getElementById("edit-cook").value)||0;
   const tags = document.getElementById("edit-tags").value.split(",").map(t=>t.trim()).filter(Boolean);
 
+  // Preserve any existing Kroger/Walmart links for ingredients whose
+  // name didn't change — otherwise every save wipes them, since the
+  // form only knows about name/quantity/cost.
+  const originalIngredients = editingId ? (MEALS.find(m => m.id === editingId)?.ingredients || []) : [];
+  const origByName = new Map(originalIngredients.map(i => [i.name, i]));
+
   const ings = [];
   document.querySelectorAll("#edit-ingredient-rows .ingredient-row").forEach(row => {
     const n = row.querySelector("[data-ing='name']").value.trim();
     const q = row.querySelector("[data-ing='qty']").value.trim();
     const c = parseFloat(row.querySelector("[data-ing='cost']").value)||0;
-    if (n) ings.push({ name:n, quantity:q||null, estimatedCost:c });
+    if (!n) return;
+    const prev = origByName.get(n);
+    ings.push({
+      name: n, quantity: q||null, estimatedCost: c,
+      ...(prev?.kroger  ? { kroger:  prev.kroger }  : {}),
+      ...(prev?.walmart ? { walmart: prev.walmart } : {}),
+    });
   });
 
   if (editingId) {
