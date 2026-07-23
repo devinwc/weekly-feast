@@ -731,7 +731,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 const SB_URL = "https://ltcukmqocxwfbvlsovnj.supabase.co";
-const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx0Y3VrbXFvY3h3ZmJ2bHNvdm5qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4NDMxMDAsImV4cCI6MjA5NDQxOTEwMH0.vViIrmuOEf8Hxw_xnCj3UnM0EqtFe-Uc-leeA9ULM_k";
+const SB_KEY = "REDACTED";
 
 const sbClient = supabase.createClient(SB_URL, SB_KEY);
 
@@ -1693,7 +1693,7 @@ function updateWalmartButton() {
   if (!_currentGroceryResult) return;
   const items = Object.values(_currentGroceryResult.grp).flat().filter(i => !checked.has(norm(i.name)));
   const linkedCount = items.filter(i => i.walmartId).length;
-  const conflictCount = items.filter(i => i.walmartConflict).length;
+  const conflictItems = items.filter(i => i.walmartConflict);
   const walmartBtn = document.getElementById("send-to-walmart-btn");
   const noteEl = document.getElementById("walmart-unresolved-note");
   if (linkedCount > 0) {
@@ -1702,9 +1702,10 @@ function updateWalmartButton() {
   } else {
     walmartBtn.style.display = "none";
   }
-  if (conflictCount > 0) {
+  if (conflictItems.length > 0) {
     noteEl.style.display = "block";
-    noteEl.textContent = `⚠️ ${conflictCount} item${conflictCount > 1 ? "s" : ""} linked to different Walmart products across recipes — check the recipe manager to pick one.`;
+    const names = conflictItems.map(i => i.name).join(", ");
+    noteEl.textContent = `⚠️ Linked to different Walmart products across recipes: ${names} — check the recipe manager to pick one.`;
   } else {
     noteEl.style.display = "none";
   }
