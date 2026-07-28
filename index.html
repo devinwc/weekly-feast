@@ -559,6 +559,7 @@
       <div class="grocery-stats">
         <span class="grocery-stat"><strong id="grocery-item-count">0</strong> items</span>
         <span class="grocery-stat">Est. <strong id="grocery-cost">$0</strong></span>
+        <span class="grocery-stat" id="walmart-cost-stat" style="display:none">Walmart cart: <strong id="walmart-cost">$0</strong></span>
         <button class="btn btn-ghost" onclick="uncheckAll()">Uncheck all</button>
         <button class="btn btn-outline" id="send-to-walmart-btn" onclick="sendToWalmart()" style="display:none">🛒 Send to Walmart</button>
       </div>
@@ -731,7 +732,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 const SB_URL = "https://ltcukmqocxwfbvlsovnj.supabase.co";
-const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx0Y3VrbXFvY3h3ZmJ2bHNvdm5qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4NDMxMDAsImV4cCI6MjA5NDQxOTEwMH0.vViIrmuOEf8Hxw_xnCj3UnM0EqtFe-Uc-leeA9ULM_k";
+const SB_KEY = "REDACTED";
 
 const sbClient = supabase.createClient(SB_URL, SB_KEY);
 
@@ -1692,15 +1693,21 @@ let _currentGroceryResult = null; // last groceryList() result, kept for the Sen
 function updateWalmartButton() {
   if (!_currentGroceryResult) return;
   const items = Object.values(_currentGroceryResult.grp).flat().filter(i => !checked.has(norm(i.name)));
-  const linkedCount = items.filter(i => i.walmartId).length;
+  const linked = items.filter(i => i.walmartId);
+  const linkedCount = linked.length;
   const conflictItems = items.filter(i => i.walmartConflict);
   const walmartBtn = document.getElementById("send-to-walmart-btn");
   const noteEl = document.getElementById("walmart-unresolved-note");
+  const costStat = document.getElementById("walmart-cost-stat");
+  const costEl = document.getElementById("walmart-cost");
   if (linkedCount > 0) {
     walmartBtn.style.display = "inline-flex";
     walmartBtn.textContent = `🛒 Send to Walmart (${linkedCount})`;
+    costStat.style.display = "inline";
+    costEl.textContent = `$${Math.round(linked.reduce((s,i)=>s+i.cost,0)*100)/100}`;
   } else {
     walmartBtn.style.display = "none";
+    costStat.style.display = "none";
   }
   if (conflictItems.length > 0) {
     noteEl.style.display = "block";

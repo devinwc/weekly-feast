@@ -624,7 +624,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 const SB_URL = "https://ltcukmqocxwfbvlsovnj.supabase.co";
-const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx0Y3VrbXFvY3h3ZmJ2bHNvdm5qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4NDMxMDAsImV4cCI6MjA5NDQxOTEwMH0.vViIrmuOEf8Hxw_xnCj3UnM0EqtFe-Uc-leeA9ULM_k";
+const SB_KEY = "REDACTED";
 
 const sbClient = supabase.createClient(SB_URL, SB_KEY);
 let currentUser = null;
@@ -2034,21 +2034,24 @@ async function saveKrogerPrices() {
   let newTotal = 0;
   meal.ingredients = (meal.ingredients||[]).map(ing => {
     const state = _krogerResults[ing.name];
-    if (!state) return ing;
-    const price = state.manualPrice !== null && state.manualPrice !== ""
+    if (!state) { newTotal += ing.estimatedCost || 0; return ing; }
+    const krogerPrice = state.manualPrice !== null && state.manualPrice !== ""
       ? parseFloat(state.manualPrice) : (state.chosen?.price ?? ing.estimatedCost ?? 0);
-    newTotal += isNaN(price) ? 0 : price;
-    return {
-      ...ing,
-      estimatedCost: isNaN(price) ? ing.estimatedCost : Math.round(price*100)/100,
-      kroger: state.chosen || state.apiResult ? {
-        productId:   state.productId || state.chosen?.productId || null,
-        description: state.chosen?.description || null,
-        price:       isNaN(price) ? null : Math.round(price*100)/100,
-        url:         state.linked || state.chosen?.url || null,
-        lockedAt:    new Date().toISOString().split("T")[0],
-      } : (ing.kroger || null),
-    };
+    const kroger = state.chosen || state.apiResult ? {
+      productId:   state.productId || state.chosen?.productId || null,
+      description: state.chosen?.description || null,
+      price:       isNaN(krogerPrice) ? null : Math.round(krogerPrice*100)/100,
+      url:         state.linked || state.chosen?.url || null,
+      lockedAt:    new Date().toISOString().split("T")[0],
+    } : (ing.kroger || null);
+
+    // Walmart price wins for the displayed/total cost when it's linked —
+    // Kroger is still recorded above so the price is ready if the
+    // Walmart link is ever removed.
+    const updated = { ...ing, kroger };
+    const effective = resolveCost({ ...updated, estimatedCost: isNaN(krogerPrice) ? (ing.estimatedCost||0) : krogerPrice });
+    newTotal += effective;
+    return { ...updated, estimatedCost: Math.round(effective*100)/100 };
   });
 
   meal.totalCostEstimate = Math.round(newTotal*100)/100;
@@ -2076,6 +2079,15 @@ let _walmartResults = {};
 // (lowercase, trim, strip a trailing "s") so "onion" and "onions" —
 // or the same ingredient across two recipes — count as the same thing.
 function norm(n) { return (n || "").toLowerCase().trim().replace(/s$/, ""); }
+
+// Price priority for an ingredient: Walmart (if linked) beats Kroger
+// (if linked) beats whatever's already in estimatedCost (manual entry,
+// or an ingredient with no linked price at all).
+function resolveCost(ing) {
+  if (ing.walmart?.price != null) return ing.walmart.price;
+  if (ing.kroger?.price  != null) return ing.kroger.price;
+  return ing.estimatedCost || 0;
+}
 
 // Looks across every recipe already in MEALS for an ingredient whose
 // normalized name matches, and that already has a Walmart link saved.
@@ -2185,11 +2197,16 @@ async function saveWalmartLinks() {
   saveBtn.disabled = true; saveBtn.textContent = "Saving…";
 
   const linkedThisSave = []; // {key, walmart} — used to propagate to other recipes below
+  let newTotal = 0;
 
   meal.ingredients = (meal.ingredients || []).map(ing => {
     const state = _walmartResults[ing.name];
-    if (!state) return ing;
-    if (!state.productId) return { ...ing, walmart: null };
+    if (!state) { newTotal += resolveCost(ing); return ing; }
+    if (!state.productId) {
+      const updated = { ...ing, walmart: null };
+      newTotal += resolveCost(updated);
+      return updated;
+    }
     const price = state.price !== "" && !isNaN(parseFloat(state.price)) ? Math.round(parseFloat(state.price) * 100) / 100 : null;
     const walmart = {
       productId:   state.productId,
@@ -2199,9 +2216,13 @@ async function saveWalmartLinks() {
       lockedAt:    new Date().toISOString().split("T")[0],
     };
     linkedThisSave.push({ key: norm(ing.name), walmart });
-    return { ...ing, walmart };
+    const updated = { ...ing, walmart };
+    const effective = resolveCost(updated);
+    newTotal += effective;
+    return { ...updated, estimatedCost: Math.round(effective*100)/100 };
   });
 
+  meal.totalCostEstimate = Math.round(newTotal*100)/100;
   ML = buildLookup();
   await saveMealToDB(meal);
 
@@ -2212,14 +2233,21 @@ async function saveWalmartLinks() {
   for (const otherMeal of MEALS) {
     if (otherMeal.id === meal.id) continue;
     let changed = false;
+    let otherTotal = 0;
     otherMeal.ingredients = (otherMeal.ingredients || []).map(ing => {
-      if (ing.walmart?.productId) return ing; // already linked in this recipe — don't overwrite
+      if (ing.walmart?.productId) { otherTotal += resolveCost(ing); return ing; } // already linked in this recipe — don't overwrite
       const match = linkedThisSave.find(l => l.key === norm(ing.name));
-      if (!match) return ing;
+      if (!match) { otherTotal += resolveCost(ing); return ing; }
       changed = true;
-      return { ...ing, walmart: match.walmart };
+      const updated = { ...ing, walmart: match.walmart };
+      const effective = resolveCost(updated);
+      otherTotal += effective;
+      return { ...updated, estimatedCost: Math.round(effective*100)/100 };
     });
-    if (changed) otherMealsToSave.set(otherMeal.id, otherMeal);
+    if (changed) {
+      otherMeal.totalCostEstimate = Math.round(otherTotal*100)/100;
+      otherMealsToSave.set(otherMeal.id, otherMeal);
+    }
   }
 
   let propagatedCount = 0;
